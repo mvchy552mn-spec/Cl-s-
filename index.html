@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clé Express Grenoble — Reproduction de clés &amp; badges à Grenoble et en Isère</title>
+<meta name="description" content="Reproduction de clés, clés plates et badges d'immeuble à Grenoble, Échirolles, Saint-Martin-d'Hères, Fontaine et dans toute l'agglomération. Devis gratuit, intervention rapide, prix transparents.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  /* ============================================
+     DESIGN TOKENS
+     Noir #121212 / Panneau #1C1814 / Or #F7B500
+     Bronze #B8860B / Ivoire #F3EFE3 / Gris #ECECEC
+  ============================================ */
+  :root{
+    --noir: #121212;
+    --panneau: #1c1814;
+    --panneau-light: #232019;
+    --or: #f7b500;
+    --bronze: #b8860b;
+    --ivoire: #f3efe3;
+    --gris: #ececec;
+    --gris-ligne: #d8d6d0;
+    --blanc: #ffffff;
+    --texte-clair: #2a2722;
+    --ombre: rgba(0,0,0,0.35);
+
+    --display: 'Fraunces', serif;
+    --corps: 'Inter', sans-serif;
+    --mono: 'IBM Plex Mono', monospace;
+
+    --wrap: 1180px;
+  }
+
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{
+    font-family: var(--corps);
+    background: var(--noir);
+    color: var(--ivoire);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  img{ max-width:100%; display:block; }
+  a{ color:inherit; text-decoration:none; }
+  ul{ list-style:none; }
+  button{ font-family:inherit; cursor:pointer; border:none; background:none; }
+  input, select, textarea{ font-family:inherit; font-size:1rem; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior:auto !important; }
+  }
+
+  .wrap{
+    max-width: var(--wrap);
+    margin: 0 auto;
+    padding: 0 28px;
+  }
+
+  :focus-visible{
+    outline: 2px solid var(--or);
+    outline-offset: 3px;
+  }
+
+  .eyebrow{
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--or);
+    display:inline-flex;
+    align-items:center;
+    gap:10px;
+  }
+  .eyebrow::before{
+    content:'';
+    width:18px; height:2px;
+    background: var(--or);
+    display:inline-block;
+  }
+
+  h1,h2,h3{
+    font-family: var(--display);
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+  }
+
+  .section-head{
+    max-width: 640px;
+    margin-bottom: 52px;
+  }
+  .section-head h2{
+    font-size: clamp(1.9rem, 3.4vw, 2.7rem);
+    margin-top: 14px;
+  }
+  .section-head p{
+    margin-top: 16px;
+    font-size: 1.05rem;
+    opacity: 0.8;
+  }
+  .light .section-head p{ opacity:0.7; }
+
+  .light{ background: var(--gris); color: var(--texte-clair); }
+  .light .eyebrow{ color: var(--bronze); }
+  .light .eyebrow::before{ background: var(--bronze); }
+
+  /* ============================================
+     SIGNATURE: bitting divider (key-cut profile)
+  ============================================ */
+  .bitting{
+    height: 26px;
+    width: 100%;
+    clip-path: polygon(0 100%, 4% 30%, 8% 100%, 12% 10%, 16% 100%, 20% 45%, 24% 100%, 28% 5%, 32% 100%, 36% 60%, 40% 100%, 44% 15%, 48% 100%, 52% 40%, 56% 100%, 60% 20%, 64% 100%, 68% 50%, 72% 100%, 76% 8%, 80% 100%, 84% 35%, 88% 100%, 92% 18%, 96% 100%, 100% 45%, 100% 100%, 0% 100%);
+  }
+  .bitting--to-panneau{ background: var(--panneau); }
+  .bitting--to-noir{ background: var(--noir); }
+  .bitting--to-gris{ background: var(--gris); }
+
+  /* small notch tick used as list marker, echoes the same motif */
+  .tick{
+    display:inline-block;
+    width:9px; height:14px;
+    background: var(--or);
+    clip-path: polygon(0 100%, 100% 100%, 100% 40%, 50% 0, 0 40%);
+    flex-shrink:0;
+  }
+
+  /* ============================================
+     HEADER
+  ============================================ */
+  .site-header{
+    position: fixed;
+    top:0; left:0; right:0;
+    z-index: 100;
+    background: rgba(18,18,18,0.0);
+    border-bottom: 1px solid rgba(247,181,0,0);
+    transition: background 0.3s ease, border-color 0.3s ease;
+  }
+  .site-header.scrolled{
+    background: rgba(18,18,18,0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(247,181,0,0.15);
+  }
+  .header-inner{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: 18px 28px;
+    max-width: var(--wrap);
+    margin:0 auto;
+  }
+  .logo{
+    font-family: var(--display);
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--ivoire);
+    display:flex;
+    flex-direction:column;
+    line-height:1.05;
+  }
+  .logo span{
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.22em;
+    color: var(--or);
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+  .nav-links{
+    display:flex;
+    gap: 30px;
+    align-items:center;
+  }
+  .nav-links a{
+    font-size: 0.92rem;
+    color: var(--ivoire);
+    opacity: 0.85;
+    transition: opacity 0.2s, color 0.2s;
+    position:relative;
+  }
+  .nav-links a:hover{ opacity:1; color: var(--or); }
+  .nav-actions{ display:flex; align-items:center; gap:14px; }
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:9px;
+    padding: 11px 22px;
+    border-radius: 2px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    white-space: nowrap;
+  }
+  .btn svg{ width:16px; height:16px; flex-shrink:0; }
+  .btn-or{
+    background: var(--or);
+    color: var(--noir);
+  }
+  .btn-or:hover{ background: var(--bronze); color: var(--ivoire); transform: translateY(-1px); }
+  .btn-ligne{
+    border: 1px solid rgba(243,239,227,0.35);
+    color: var(--ivoire);
+  }
+  .btn-ligne:hover{ border-color: var(--or); color: var(--or); }
+  .btn-whatsapp{
+    background: #1f7a52;
+    color: var(--ivoire);
+  }
+  .btn-whatsapp:hover{ background:#185f40; transform: translateY(-1px); }
+  .menu-toggle{
+    display:none;
+    width: 26px; height:20px;
+    flex-direction:column;
+    justify-content:space-between;
+  }
+  .menu-toggle span{
+    display:block; height:2px; width:100%;
+    background: var(--ivoire);
+  }
+
+  @media (max-width: 900px){
+    .nav-links{ display:none; }
+    .nav-actions .btn-ligne{ display:none; }
+    .menu-toggle{ display:flex; }
+  }
+  .mobile-nav{
+    display:none;
+    flex-direction:column;
+    background: var(--panneau);
+    padding: 10px 28px 24px;
+    border-bottom: 1px solid rgba(247,181,0,0.15);
+  }
+  .mobile-nav.open{ display:flex; }
+  .mobile-nav a{
+    padding: 13px 0;
+    border-bottom: 1px solid rgba(243,239,227,0.08);
+    font-size: 1rem;
+    color: var(--ivoire);
+  }
+  .mobile-nav .mobile-call{ color: var(--or); font-family: var(--mono); }
+
+  /* ============================================
+     HERO
+  ============================================ */
+  .hero{
+    position: relative;
+    min-height: 100vh;
+    display:flex;
+    align-items:center;
+    padding: 140px 28px 90px;
+    background:
+      radial-gradient(circle at 78% 18%, rgba(247,181,0,0.10), transparent 55%),
+      var(--noir);
+    overflow:hidden;
+  }
+  .hero-inner{
+    max-width: var(--wrap);
+    margin: 0 auto;
+    width:100%;
+    display:grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 50px;
+    align-items:center;
+  }
+  .hero h1{
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    margin-top: 18px;
+    max-width: 620px;
+  }
+  .hero h1 em{
+    font-style: italic;
+    color: var(--or);
+    font-weight: 500;
+  }
+  .hero-sub{
+    margin-top: 22px;
+    font-size: 1.12rem;
+    color: var(--ivoire);
+    opacity: 0.78;
+    max-width: 480px;
+  }
+  .hero-ctas{
+    margin-top: 36px;
+    display:flex;
+    gap: 16px;
+    flex-wrap:wrap;
+  }
+  .hero-ctas .btn{ padding: 15px 26px; font-size: 0.95rem; }
+  .hero-meta{
+    margin-top: 42px;
+    display:flex;
+    gap: 28px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--ivoire);
+    opacity: 0.6;
+    flex-wrap:wrap;
+  }
+  .hero-meta strong{ color: var(--or); opacity:1; }
+
+  .hero-key{
+    width:100%;
+    aspect-ratio: 1/1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .hero-key svg{ width:100%; max-width: 460px; overflow: visible; }
+  .key-tooth{
+    fill: var(--or);
+  }
+  .key-line{
+    fill:none;
+    stroke: var(--or);
+    stroke-width: 7;
+    stroke-linecap: round;
+  }
+  .key-bow{
+    fill:none;
+    stroke: var(--or);
+    stroke-width: 7;
+  }
+
+  @media (max-width: 900px){
+    .hero-inner{ grid-template-columns: 1fr; }
+    .hero-key{ order:-1; max-width: 260px; margin: 0 auto 10px; }
+    .hero{ padding-top: 120px; text-align:left; }
+  }
+
+  /* ============================================
+     TRUST STRIP
+  ============================================ */
+  .trust{
+    background: var(--panneau);
+    padding: 34px 28px;
+  }
+  .trust-inner{
+    max-width: var(--wrap);
+    margin:0 auto;
+    display:flex;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap:wrap;
+  }
+  .trust-item{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    font-size: 0.92rem;
+    color: var(--ivoire);
+    opacity: 0.85;
+    flex:1;
+    min-width: 220px;
+  }
+  .trust-item svg{ width:20px; height:20px; stroke: var(--or); flex-shrink:0; }
+
+  /* ============================================
+     SERVICES
+  ============================================ */
+  .services{
+    background: var(--panneau);
+    padding: 100px 28px 110px;
+  }
+  .services-grid{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+  }
+  .service-card{
+    background: var(--panneau-light);
+    border: 1px solid rgba(247,181,0,0.12);
+    border-radius: 2px;
+    padding: 38px 30px;
+    transition: border-color 0.25s, transform 0.25s;
+  }
+  .service-card:hover{
+    border-color: rgba(247,181,0,0.4);
+    transform: translateY(-4px);
+  }
+  .service-icon{
+    width: 46px; height:46px;
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom: 22px;
+  }
+  .service-icon svg{ width:32px; height:32px; stroke: var(--or); fill:none; stroke-width:1.6; }
+  .service-card h3{
+    font-size: 1.32rem;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+  .service-card p{
+    font-size: 0.96rem;
+    opacity: 0.75;
+    line-height: 1.65;
+  }
+  @media (max-width: 900px){
+    .services-grid{ grid-template-columns: 1fr; }
+    .trust-inner{ flex-direction:column; }
+  }
+
+  /* ============================================
+     PRICING
+  ============================================ */
+  .pricing{
+    padding: 100px 28px 90px;
+  }
+  .pricing-layout{
+    display:grid;
+    grid-template-columns: 0.85fr 1.15fr;
+    gap: 50px;
+    align-items:start;
+  }
+  .price-table{
+    width:100%;
+    border-collapse: collapse;
+    background: var(--blanc);
+    border: 1px solid var(--gris-ligne);
+  }
+  .price-table tr{
+    border-bottom: 1px solid var(--gris-ligne);
+  }
+  .price-table tr:last-child{ border-bottom:none; }
+  .price-table td{
+    padding: 18px 22px;
+    font-size: 0.98rem;
+  }
+  .price-table td:last-child{
+    text-align:right;
+    font-family: var(--mono);
+    font-weight:500;
+    color: var(--bronze);
+    white-space:nowrap;
+  }
+  .price-table tr.price-note td{
+    background: rgba(184,134,11,0.06);
+    font-style: italic;
+    font-size: 0.88rem;
+  }
+  .price-foot{
+    margin-top: 18px;
+    font-size: 0.88rem;
+    opacity:0.65;
+    font-family: var(--mono);
+  }
+  .pricing-aside h3{
+    font-size: 1.5rem;
+    margin-bottom: 16px;
+  }
+  .pricing-aside p{
+    opacity:0.75;
+    margin-bottom: 22px;
+    max-width: 420px;
+  }
+  .pricing-aside .btn{ padding:14px 24px; }
+  @media (max-width: 900px){
+    .pricing-layout{ grid-template-columns: 1fr; }
+  }
+
+  /* ============================================
+     WHY US
+  ============================================ */
+  .why{
+    background: var(--noir);
+    padding: 100px 28px 110px;
+  }
+  .why-layout{
+    display:grid;
+    grid-template-columns: 0.8fr 1.2fr;
+    gap: 50px;
+  }
+  .why-list{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px 36px;
+  }
+  .why-list li{
+    display:flex;
+    gap: 14px;
+    align-items:flex-start;
+    font-size: 0.98rem;
+    opacity: 0.88;
+    line-height:1.5;
+  }
+  .why-list .tick{ margin-top:5px; }
+  @media (max-width: 900px){
+    .why-layout{ grid-template-columns: 1fr; }
+    .why-list{ grid-template-columns: 1fr; }
+  }
+
+  /* ============================================
+     ZONES
+  ============================================ */
+  .zones{
+    padding: 100px 28px 110px;
+  }
+  .zones-layout{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 50px;
+    align-items:start;
+  }
+  .zones-chips{
+    display:flex;
+    flex-wrap:wrap;
+    gap: 10px;
+  }
+  .zone-chip{
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    padding: 9px 16px;
+    background: var(--blanc);
+    border: 1px solid var(--gris-ligne);
+    border-radius: 2px;
+  }
+  .zone-chip.fav{
+    border-color: var(--bronze);
+    color: var(--bronze);
+  }
+  .zones-note{
+    margin-top: 22px;
+    font-size: 0.9rem;
+    opacity:0.65;
+  }
+  .map-frame{
+    width:100%;
+    aspect-ratio: 4/3.4;
+    border: 1px solid var(--gris-ligne);
+    filter: grayscale(0.15) contrast(1.02);
+  }
+  @media (max-width: 900px){
+    .zones-layout{ grid-template-columns: 1fr; }
+  }
+
+  /* ============================================
+     AVIS
+  ============================================ */
+  .avis{
+    background: var(--noir);
+    padding: 100px 0 110px;
+  }
+  .avis .section-head{ padding: 0 28px; max-width: var(--wrap); margin: 0 auto 44px; }
+  .avis-scroll{
+    display:flex;
+    gap: 20px;
+    overflow-x: auto;
+    padding: 4px 28px 20px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .avis-scroll::-webkit-scrollbar{ display:none; }
+  .avis-card{
+    flex: 0 0 300px;
+    scroll-snap-align: start;
+    background: var(--panneau);
+    border: 1px solid rgba(247,181,0,0.12);
+    padding: 30px 28px;
+  }
+  .avis-stars{ color: var(--or); font-size: 0.95rem; letter-spacing: 2px; }
+  .avis-card p{
+    margin-top: 16px;
+    font-size: 1rem;
+    line-height: 1.6;
+    opacity: 0.85;
+  }
+  .avis-card span{
+    display:block;
+    margin-top: 18px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    opacity: 0.5;
+  }
+  .avis-controls{
+    display:flex;
+    gap: 10px;
+    padding: 0 28px;
+    max-width: var(--wrap);
+    margin: 0 auto;
+    justify-content:flex-end;
+  }
+  .avis-controls button{
+    width: 38px; height:38px;
+    border: 1px solid rgba(247,181,0,0.3);
+    color: var(--or);
+    display:flex; align-items:center; justify-content:center;
+    transition: background 0.2s;
+  }
+  .avis-controls button:hover{ background: rgba(247,181,0,0.1); }
+
+  /* ============================================
+     FAQ
+  ============================================ */
+  .faq{
+    background: var(--noir);
+    padding: 90px 28px 110px;
+  }
+  .faq-list{
+    max-width: 760px;
+  }
+  .faq-item{
+    border-bottom: 1px solid rgba(243,239,227,0.12);
+  }
+  .faq-q{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap: 20px;
+    padding: 24px 0;
+    text-align:left;
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--ivoire);
+  }
+  .faq-q .qmark{
+    font-family: var(--mono);
+    color: var(--or);
+    font-size: 0.85rem;
+  }
+  .faq-q .chevron{
+    width: 18px; height:18px;
+    stroke: var(--or);
+    fill:none;
+    stroke-width:2;
+    transition: transform 0.25s ease;
+    flex-shrink:0;
+  }
+  .faq-item.open .chevron{ transform: rotate(180deg); }
+  .faq-a{
+    max-height:0;
+    overflow:hidden;
+    transition: max-height 0.3s ease;
+  }
+  .faq-a p{
+    padding: 0 0 24px;
+    opacity:0.72;
+    max-width: 620px;
+    line-height:1.65;
+  }
+
+  /* ============================================
+     CONTACT
+  ============================================ */
+  .contact{
+    padding: 100px 28px 110px;
+  }
+  .contact-layout{
+    display:grid;
+    grid-template-columns: 0.85fr 1.15fr;
+    gap: 56px;
+  }
+  .hours-table{
+    width:100%;
+    margin-top: 8px;
+  }
+  .hours-table tr{ border-bottom: 1px solid var(--gris-ligne); }
+  .hours-table tr:last-child{ border-bottom:none; }
+  .hours-table td{
+    padding: 12px 0;
+    font-size: 0.95rem;
+  }
+  .hours-table td:last-child{
+    text-align:right;
+    font-family: var(--mono);
+    font-size: 0.88rem;
+  }
+  .status-badge{
+    display:inline-flex;
+    align-items:center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    margin-bottom: 18px;
+    padding: 7px 14px;
+    border-radius: 20px;
+    background: var(--blanc);
+    border: 1px solid var(--gris-ligne);
+  }
+  .status-dot{ width:7px; height:7px; border-radius:50%; background:#999; }
+  .status-badge.open .status-dot{ background:#2e9e57; }
+  .status-badge.open{ color:#2e9e57; border-color:#bfe6cd; }
+  .status-badge.closed .status-dot{ background:#c2483b; }
+  .status-badge.closed{ color:#c2483b; border-color:#eecac5; }
+
+  .contact-form{
+    background: var(--blanc);
+    border: 1px solid var(--gris-ligne);
+    padding: 38px;
+  }
+  .contact-form h3{ font-size:1.4rem; margin-bottom:6px; }
+  .contact-form > p{ opacity:0.65; font-size:0.92rem; margin-bottom:26px; }
+  .form-row{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px; }
+  .form-field{ display:flex; flex-direction:column; gap:6px; }
+  .form-field label{ font-size:0.8rem; font-family: var(--mono); opacity:0.6; }
+  .form-field input, .form-field select, .form-field textarea{
+    padding: 12px 14px;
+    border: 1px solid var(--gris-ligne);
+    background: var(--gris);
+    color: var(--texte-clair);
+  }
+  .form-field textarea{ resize: vertical; min-height: 90px; }
+  .form-field.full{ grid-column: 1/-1; }
+  .contact-form .btn{ width:100%; justify-content:center; padding:15px; margin-top:6px; }
+  @media (max-width: 900px){
+    .contact-layout{ grid-template-columns: 1fr; }
+    .form-row{ grid-template-columns: 1fr; }
+  }
+
+  /* ============================================
+     FOOTER
+  ============================================ */
+  .site-footer{
+    background: var(--panneau);
+    padding: 60px 28px 30px;
+    border-top: 1px solid rgba(247,181,0,0.12);
+  }
+  .footer-top{
+    display:flex;
+    justify-content:space-between;
+    gap: 40px;
+    flex-wrap:wrap;
+    max-width: var(--wrap);
+    margin: 0 auto;
+    padding-bottom: 36px;
+    border-bottom: 1px solid rgba(243,239,227,0.08);
+  }
+  .footer-brand .logo{ margin-bottom: 12px; }
+  .footer-brand p{ opacity:0.6; font-size:0.92rem; max-width: 360px; line-height:1.6; }
+  .footer-links{ display:flex; gap: 50px; flex-wrap:wrap; }
+  .footer-col h4{
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--or);
+    margin-bottom: 14px;
+  }
+  .footer-col a, .footer-col span{
+    display:block;
+    font-size: 0.92rem;
+    opacity:0.7;
+    margin-bottom: 10px;
+  }
+  .footer-seo{
+    max-width: var(--wrap);
+    margin: 28px auto 0;
+    font-size: 0.82rem;
+    opacity: 0.4;
+    line-height: 1.7;
+  }
+  .footer-bottom{
+    max-width: var(--wrap);
+    margin: 28px auto 0;
+    display:flex;
+    justify-content:space-between;
+    font-size: 0.8rem;
+    opacity:0.45;
+    flex-wrap:wrap;
+    gap: 10px;
+  }
+
+  /* ============================================
+     FLOATING ACTIONS
+  ============================================ */
+  .floating-actions{
+    position: fixed;
+    bottom: 22px;
+    right: 22px;
+    z-index: 90;
+    display:flex;
+    flex-direction:column;
+    gap: 12px;
+  }
+  .float-btn{
+    width: 54px; height:54px;
+    border-radius: 50%;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow: 0 6px 18px var(--ombre);
+    transition: transform 0.2s ease;
+  }
+  .float-btn:hover{ transform: scale(1.08); }
+  .float-btn svg{ width:24px; height:24px; }
+  .float-whatsapp{ background:#1f7a52; color:#fff; }
+  .float-call{ background: var(--or); color: var(--noir); }
+
+  /* ============================================
+     SCROLL REVEAL
+  ============================================ */
+  .section-head,
+  .service-card,
+  .price-table tr,
+  .why-list li,
+  .zones-chips,
+  .map-frame,
+  .avis-card,
+  .faq-item,
+  .form-field,
+  .pricing-aside,
+  .status-badge,
+  .hours-table tr{
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity 0.65s cubic-bezier(.2,.7,.3,1), transform 0.65s cubic-bezier(.2,.7,.3,1);
+  }
+  .section-head.visible,
+  .service-card.visible,
+  .price-table tr.visible,
+  .why-list li.visible,
+  .zones-chips.visible,
+  .map-frame.visible,
+  .avis-card.visible,
+  .faq-item.visible,
+  .form-field.visible,
+  .pricing-aside.visible,
+  .status-badge.visible,
+  .hours-table tr.visible{
+    opacity: 1;
+    transform: none;
+  }
+
+  .services-grid .service-card:nth-child(1){ transition-delay: 0ms; }
+  .services-grid .service-card:nth-child(2){ transition-delay: 110ms; }
+  .services-grid .service-card:nth-child(3){ transition-delay: 220ms; }
+
+  .why-list li:nth-child(1){ transition-delay: 0ms; }
+  .why-list li:nth-child(2){ transition-delay: 70ms; }
+  .why-list li:nth-child(3){ transition-delay: 140ms; }
+  .why-list li:nth-child(4){ transition-delay: 210ms; }
+  .why-list li:nth-child(5){ transition-delay: 280ms; }
+  .why-list li:nth-child(6){ transition-delay: 350ms; }
+
+  .price-table tr:nth-child(1){ transition-delay: 0ms; }
+  .price-table tr:nth-child(2){ transition-delay: 60ms; }
+  .price-table tr:nth-child(3){ transition-delay: 120ms; }
+  .price-table tr:nth-child(4){ transition-delay: 180ms; }
+  .price-table tr:nth-child(5){ transition-delay: 240ms; }
+  .price-table tr:nth-child(6){ transition-delay: 300ms; }
+  .price-table tr:nth-child(7){ transition-delay: 360ms; }
+
+  .hours-table tr:nth-child(1){ transition-delay: 0ms; }
+  .hours-table tr:nth-child(2){ transition-delay: 50ms; }
+  .hours-table tr:nth-child(3){ transition-delay: 100ms; }
+  .hours-table tr:nth-child(4){ transition-delay: 150ms; }
+  .hours-table tr:nth-child(5){ transition-delay: 200ms; }
+  .hours-table tr:nth-child(6){ transition-delay: 250ms; }
+  .hours-table tr:nth-child(7){ transition-delay: 300ms; }
+
+  .avis-scroll .avis-card:nth-child(1){ transition-delay: 0ms; }
+  .avis-scroll .avis-card:nth-child(2){ transition-delay: 90ms; }
+  .avis-scroll .avis-card:nth-child(3){ transition-delay: 180ms; }
+  .avis-scroll .avis-card:nth-child(4){ transition-delay: 270ms; }
+  .avis-scroll .avis-card:nth-child(5){ transition-delay: 360ms; }
+
+  .faq-list .faq-item:nth-child(1){ transition-delay: 0ms; }
+  .faq-list .faq-item:nth-child(2){ transition-delay: 90ms; }
+  .faq-list .faq-item:nth-child(3){ transition-delay: 180ms; }
+  .faq-list .faq-item:nth-child(4){ transition-delay: 270ms; }
+
+  .form-row .form-field:nth-child(1){ transition-delay: 0ms; }
+  .form-row .form-field:nth-child(2){ transition-delay: 80ms; }
+
+  /* subtle hover lift for testimonial cards */
+  .avis-card{ transition: opacity 0.65s cubic-bezier(.2,.7,.3,1), transform 0.65s cubic-bezier(.2,.7,.3,1), border-color 0.25s; }
+  .avis-card:hover{ border-color: rgba(247,181,0,0.4); }
+
+  /* gold breathing glow on the hero key */
+  @media (prefers-reduced-motion: no-preference){
+    .hero-key svg{ animation: keyGlow 4.5s ease-in-out infinite; }
+  }
+  @keyframes keyGlow{
+    0%, 100% { filter: drop-shadow(0 0 0 rgba(247,181,0,0)); }
+    50% { filter: drop-shadow(0 0 22px rgba(247,181,0,0.4)); }
+  }
+  .hero-key{ will-change: transform; }
+</style>
+</head>
+<body>
+
+<!-- ============================================
+     HEADER / NAV
+============================================ -->
+<header class="site-header" id="site-header">
+  <div class="header-inner">
+    <a href="#hero" class="logo">Clé Express<span>Grenoble · Isère</span></a>
+    <nav class="nav-links">
+      <a href="#services">Services</a>
+      <a href="#tarifs">Tarifs</a>
+      <a href="#zones">Zones</a>
+      <a href="#avis">Avis</a>
+      <a href="#faq">FAQ</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="tel:+33600000000" class="btn btn-ligne">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.6 10.8a15.7 15.7 0 0 0 6.6 6.6l2.2-2.2a1.3 1.3 0 0 1 1.3-.3 11 11 0 0 0 3.4.5 1.3 1.3 0 0 1 1.3 1.3v3.2a1.3 1.3 0 0 1-1.3 1.3C10.5 21.2 2.8 13.5 2.8 4.1A1.3 1.3 0 0 1 4.1 2.8h3.2A1.3 1.3 0 0 1 8.6 4.1a11 11 0 0 0 .5 3.4 1.3 1.3 0 0 1-.3 1.3z"/></svg>
+        04 76 00 00 00
+      </a>
+      <a href="#contact" class="btn btn-or">Devis gratuit</a>
+      <button class="menu-toggle" id="menu-toggle" aria-label="Ouvrir le menu"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+  <nav class="mobile-nav" id="mobile-nav">
+    <a href="#services">Services</a>
+    <a href="#tarifs">Tarifs</a>
+    <a href="#zones">Zones</a>
+    <a href="#avis">Avis</a>
+    <a href="#faq">FAQ</a>
+    <a href="#contact">Contact</a>
+    <a href="tel:+33600000000" class="mobile-call">📞 04 76 00 00 00</a>
+  </nav>
+</header>
+
+<!-- ============================================
+     HERO
+============================================ -->
+<section class="hero" id="hero">
+  <div class="hero-inner">
+    <div class="hero-text">
+      <span class="eyebrow">Serrurerie de précision · Grenoble &amp; Isère</span>
+      <h1>Votre clé,<br>recoupée à <em>la précision</em>,<br>devant vous.</h1>
+      <p class="hero-sub">Reproduction de clés, clés plates et badges d'immeuble. Rapidité, qualité et prix transparents, pour les particuliers comme pour les professionnels.</p>
+      <div class="hero-ctas">
+        <a href="tel:+33600000000" class="btn btn-or">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.6 10.8a15.7 15.7 0 0 0 6.6 6.6l2.2-2.2a1.3 1.3 0 0 1 1.3-.3 11 11 0 0 0 3.4.5 1.3 1.3 0 0 1 1.3 1.3v3.2a1.3 1.3 0 0 1-1.3 1.3C10.5 21.2 2.8 13.5 2.8 4.1A1.3 1.3 0 0 1 4.1 2.8h3.2A1.3 1.3 0 0 1 8.6 4.1a11 11 0 0 0 .5 3.4 1.3 1.3 0 0 1-.3 1.3z"/></svg>
+          Appeler maintenant
+        </a>
+        <a href="https://wa.me/33600000000" target="_blank" rel="noopener" class="btn btn-whatsapp">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm0 18.2a8.1 8.1 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.6.8-.8 1-.1.2-.3.2-.5.1-1.3-.6-2.2-1.4-3-2.7-.1-.2-.1-.4.1-.5.2-.2.4-.5.6-.7.1-.2.1-.4 0-.6-.1-.2-.6-1.4-.8-1.9-.2-.4-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.2-.9.9-.9 2.2s.9 2.6 1.1 2.8c1.3 1.8 2.8 3.1 4.9 3.8 1.5.5 2.1.4 2.6.3.6-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.1-1.2-.1-.1-.3-.2-.5-.3z"/></svg>
+          WhatsApp
+        </a>
+      </div>
+      <div class="hero-meta">
+        <span><strong>2–10 min</strong> par clé</span>
+        <span><strong>Devis</strong> gratuit</span>
+        <span><strong>CB · Espèces ·</strong> Sans contact</span>
+      </div>
+    </div>
+    <div class="hero-key" aria-hidden="true">
+      <svg viewBox="0 0 460 460">
+        <circle class="key-bow" cx="100" cy="190" r="62"/>
+        <line class="key-line" x1="158" y1="190" x2="350" y2="190"/>
+        <rect class="key-tooth" x="195" y="190" width="14" height="26"/>
+        <rect class="key-tooth" x="221" y="190" width="14" height="44"/>
+        <rect class="key-tooth" x="247" y="190" width="14" height="18"/>
+        <rect class="key-tooth" x="273" y="190" width="14" height="52"/>
+        <rect class="key-tooth" x="299" y="190" width="14" height="30"/>
+        <rect class="key-tooth" x="325" y="190" width="14" height="14"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<div class="bitting bitting--to-panneau"></div>
+
+<!-- ============================================
+     TRUST STRIP
+============================================ -->
+<section class="trust">
+  <div class="trust-inner">
+    <div class="trust-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M9 12l2 2 4-4M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z"/></svg>
+      Devis gratuit avant toute intervention
+    </div>
+    <div class="trust-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      Intervention rapide, sans rendez-vous
+    </div>
+    <div class="trust-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/></svg>
+      Paiement CB, espèces ou sans contact
+    </div>
+  </div>
+</section>
+
+<div class="bitting bitting--to-panneau"></div>
+
+<section class="services" id="services">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Nos services</span>
+      <h2>Trois savoir-faire, une seule précision</h2>
+      <p>De la clé classique au badge d'accès, chaque copie est ajustée pour fonctionner du premier coup.</p>
+    </div>
+    <div class="services-grid">
+      <div class="service-card">
+        <div class="service-icon">
+          <svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9M16 16l2.5 2.5M19 13l2.5 2.5"/></svg>
+        </div>
+        <h3>Reproduction de clés</h3>
+        <p>La majorité des clés de maison, appartement, garage, cave et boîte aux lettres, reproduites en quelques minutes.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">
+          <svg viewBox="0 0 24 24"><path d="M3 17l5-5M21 7l-9 9M14 4l6 6-3 3-6-6 3-3z"/></svg>
+        </div>
+        <h3>Clés plates</h3>
+        <p>Copie de clés plates ajustée avec une précision professionnelle, pour un fonctionnement impeccable dès la pose.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">
+          <svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="9" r="2.2"/><path d="M9 15h6M9 18h6"/></svg>
+        </div>
+        <h3>Badges d'immeuble</h3>
+        <p>Programmation et duplication de badges compatibles, dans le respect des autorisations et de la réglementation.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="bitting bitting--to-gris"></div>
+
+<!-- ============================================
+     TARIFS
+============================================ -->
+<section class="pricing light" id="tarifs">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Tarifs</span>
+      <h2>Des prix annoncés, sans surprise</h2>
+      <p>Le tarif est confirmé avant la coupe. Aucun frais caché, aucune surprise à la fin.</p>
+    </div>
+    <div class="pricing-layout">
+      <div>
+        <table class="price-table">
+          <tr><td>Clé plate</td><td>12 €</td></tr>
+          <tr><td>Clé classique</td><td>15 €</td></tr>
+          <tr><td>Clé boîte aux lettres</td><td>15 €</td></tr>
+          <tr><td>Clé de garage</td><td>18 €</td></tr>
+          <tr><td>Badge immeuble</td><td>35 €</td></tr>
+          <tr><td>Badge Vigik compatible</td><td>40 €</td></tr>
+          <tr class="price-note"><td>Double supplémentaire</td><td>−10 %</td></tr>
+        </table>
+        <p class="price-foot">Devis gratuit avant toute intervention</p>
+      </div>
+      <div class="pricing-aside">
+        <h3>Une question sur un modèle précis ?</h3>
+        <p>Certaines clés protégées nécessitent une carte de propriété. Envoyez une photo par WhatsApp pour un avis immédiat, avant de vous déplacer.</p>
+        <a href="https://wa.me/33600000000" target="_blank" rel="noopener" class="btn btn-whatsapp">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm0 18.2a8.1 8.1 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2z"/></svg>
+          Envoyer une photo
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="bitting bitting--to-noir" style="transform: scaleY(-1);"></div>
+
+<!-- ============================================
+     POURQUOI NOUS CHOISIR
+============================================ -->
+<section class="why" id="pourquoi">
+  <div class="wrap">
+    <div class="why-layout">
+      <div class="section-head" style="margin-bottom:0;">
+        <span class="eyebrow">Pourquoi nous choisir</span>
+        <h2>L'exigence d'un artisan, la rapidité d'un service express</h2>
+      </div>
+      <ul class="why-list">
+        <li><span class="tick"></span> Service rapide, sans rendez-vous nécessaire</li>
+        <li><span class="tick"></span> Travail précis, contrôlé à chaque étape</li>
+        <li><span class="tick"></span> Prix transparents, annoncés à l'avance</li>
+        <li><span class="tick"></span> Conseils personnalisés selon votre serrure</li>
+        <li><span class="tick"></span> Matériel professionnel, entretenu régulièrement</li>
+        <li><span class="tick"></span> Paiement CB, espèces ou sans contact</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="zones light" id="zones">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Zone d'intervention</span>
+      <h2>Où nous intervenons</h2>
+      <p>À Grenoble et dans toute l'agglomération, jusqu'à Voiron et Bourgoin-Jallieu selon disponibilité.</p>
+    </div>
+    <div class="zones-layout">
+      <div>
+        <div class="zones-chips">
+          <span class="zone-chip fav">Grenoble</span>
+          <span class="zone-chip">Échirolles</span>
+          <span class="zone-chip">Saint-Martin-d'Hères</span>
+          <span class="zone-chip">Fontaine</span>
+          <span class="zone-chip">Seyssinet-Pariset</span>
+          <span class="zone-chip">Seyssins</span>
+          <span class="zone-chip">Sassenage</span>
+          <span class="zone-chip">Meylan</span>
+          <span class="zone-chip">La Tronche</span>
+          <span class="zone-chip">Gières</span>
+          <span class="zone-chip">Domène</span>
+          <span class="zone-chip">Eybens</span>
+          <span class="zone-chip">Le Pont-de-Claix</span>
+          <span class="zone-chip">Claix</span>
+          <span class="zone-chip">Vif</span>
+          <span class="zone-chip">Varces-Allières-et-Risset</span>
+          <span class="zone-chip">Crolles</span>
+          <span class="zone-chip">Voiron</span>
+          <span class="zone-chip">Moirans</span>
+          <span class="zone-chip">Voreppe</span>
+          <span class="zone-chip">Bourgoin-Jallieu</span>
+        </div>
+        <p class="zones-note">Zone hors liste ? Écrivez sur WhatsApp pour vérifier la disponibilité.</p>
+      </div>
+      <iframe class="map-frame" src="https://www.google.com/maps?q=Grenoble&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="Carte d'intervention Grenoble"></iframe>
+    </div>
+  </div>
+</section>
+
+<div class="bitting bitting--to-noir" style="transform: scaleY(-1);"></div>
+
+<!-- ============================================
+     AVIS CLIENTS
+============================================ -->
+<section class="avis" id="avis">
+  <div class="section-head">
+    <span class="eyebrow">Avis clients</span>
+    <h2>Ce qu'en disent les clients de l'agglomération</h2>
+  </div>
+  <div class="avis-controls">
+    <button id="avis-prev" aria-label="Avis précédent">‹</button>
+    <button id="avis-next" aria-label="Avis suivant">›</button>
+  </div>
+  <div class="avis-scroll" id="avis-scroll">
+    <div class="avis-card">
+      <div class="avis-stars">★★★★★</div>
+      <p>Service très rapide, clé refaite en moins de cinq minutes.</p>
+      <span>Grenoble</span>
+    </div>
+    <div class="avis-card">
+      <div class="avis-stars">★★★★★</div>
+      <p>Excellent accueil et prix très correct.</p>
+      <span>Échirolles</span>
+    </div>
+    <div class="avis-card">
+      <div class="avis-stars">★★★★★</div>
+      <p>Mon badge fonctionne parfaitement.</p>
+      <span>Saint-Martin-d'Hères</span>
+    </div>
+    <div class="avis-card">
+      <div class="avis-stars">★★★★★</div>
+      <p>Je recommande sans hésiter.</p>
+      <span>Fontaine</span>
+    </div>
+    <div class="avis-card">
+      <div class="avis-stars">★★★★★</div>
+      <p>Très professionnel.</p>
+      <span>Meylan</span>
+    </div>
+  </div>
+</section>
+
+<section class="faq" id="faq">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Questions fréquentes</span>
+      <h2>Tout ce qu'il faut savoir avant de venir</h2>
+    </div>
+    <div class="faq-list">
+      <div class="faq-item">
+        <button class="faq-q">
+          <span><span class="qmark">Q.</span> Combien de temps faut-il pour reproduire une clé ?</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a"><p>Entre 2 et 10 minutes selon le modèle de clé.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span><span class="qmark">Q.</span> Toutes les clés peuvent-elles être reproduites ?</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a"><p>La plupart, oui. Certaines clés protégées nécessitent une carte de propriété ou une autorisation du fabricant.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span><span class="qmark">Q.</span> Les badges sont-ils tous compatibles ?</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a"><p>Non. Cela dépend de leur technologie et des autorisations applicables à votre résidence.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span><span class="qmark">Q.</span> Quels moyens de paiement acceptez-vous ?</span>
+          <svg class="chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="faq-a"><p>Carte bancaire, espèces et paiement sans contact.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="bitting bitting--to-gris"></div>
+
+<!-- ============================================
+     HORAIRES + CONTACT
+============================================ -->
+<section class="contact light" id="contact">
+  <div class="wrap">
+    <div class="contact-layout">
+      <div>
+        <span class="eyebrow">Horaires &amp; contact</span>
+        <h2 style="font-size: clamp(1.7rem, 2.8vw, 2.2rem); margin: 14px 0 22px;">Venez avec votre clé,<br>repartez avec sa copie</h2>
+        <div class="status-badge" id="status-badge"><span class="status-dot"></span> <span id="status-text">Vérification des horaires…</span></div>
+        <table class="hours-table">
+          <tr><td>Lundi</td><td>9h00 – 18h30</td></tr>
+          <tr><td>Mardi</td><td>9h00 – 18h30</td></tr>
+          <tr><td>Mercredi</td><td>9h00 – 18h30</td></tr>
+          <tr><td>Jeudi</td><td>9h00 – 18h30</td></tr>
+          <tr><td>Vendredi</td><td>9h00 – 18h30</td></tr>
+          <tr><td>Samedi</td><td>9h00 – 17h00</td></tr>
+          <tr><td>Dimanche</td><td>Fermé</td></tr>
+        </table>
+        <p style="margin-top:22px; font-size:0.92rem; opacity:0.65;">Grenoble &amp; agglomération — déplacement possible selon le service.</p>
+      </div>
+
+      <form class="contact-form" id="devis-form">
+        <h3>Demande de devis</h3>
+        <p>Réponse rapide par WhatsApp, généralement sous quelques minutes.</p>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="f-nom">Nom</label>
+            <input type="text" id="f-nom" required>
+          </div>
+          <div class="form-field">
+            <label for="f-tel">Téléphone</label>
+            <input type="tel" id="f-tel" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="f-service">Service souhaité</label>
+            <select id="f-service">
+              <option>Reproduction de clé</option>
+              <option>Clé plate</option>
+              <option>Badge d'immeuble</option>
+              <option>Autre / je ne sais pas</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="f-ville">Ville</label>
+            <input type="text" id="f-ville" placeholder="Grenoble, Échirolles…">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field full">
+            <label for="f-message">Message (optionnel)</label>
+            <textarea id="f-message" placeholder="Précisez le type de clé ou de badge si vous le savez"></textarea>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-or">Envoyer la demande sur WhatsApp</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================
+     FOOTER
+============================================ -->
+<footer class="site-footer">
+  <div class="footer-top">
+    <div class="footer-brand">
+      <a href="#hero" class="logo">Clé Express<span>Grenoble · Isère</span></a>
+      <p>Reproduction de clés, clés plates et badges d'immeuble. Service local, rapide et transparent.</p>
+    </div>
+    <div class="footer-links">
+      <div class="footer-col">
+        <h4>Services</h4>
+        <a href="#services">Reproduction de clés</a>
+        <a href="#services">Clés plates</a>
+        <a href="#services">Badges d'immeuble</a>
+      </div>
+      <div class="footer-col">
+        <h4>Le site</h4>
+        <a href="#tarifs">Tarifs</a>
+        <a href="#zones">Zones</a>
+        <a href="#faq">FAQ</a>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <span>04 76 00 00 00</span>
+        <span>Grenoble &amp; agglomération</span>
+        <a href="https://wa.me/33600000000" target="_blank" rel="noopener">WhatsApp</a>
+      </div>
+    </div>
+  </div>
+  <p class="footer-seo">Clé Express Grenoble — reproduction de clés et copie de badges à Grenoble, Échirolles, Saint-Martin-d'Hères, Fontaine et dans toute l'Isère. Double de clé maison, appartement et garage, copie de badge Vigik, serrurerie de proximité.</p>
+  <div class="footer-bottom">
+    <span>© 2026 Clé Express Grenoble</span>
+    <span>Devis gratuit · Intervention rapide · Paiement sécurisé</span>
+  </div>
+</footer>
+
+<div class="floating-actions">
+  <a href="https://wa.me/33600000000" target="_blank" rel="noopener" class="float-btn float-whatsapp" aria-label="Contacter sur WhatsApp">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm0 18.2a8.1 8.1 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2z"/></svg>
+  </a>
+  <a href="tel:+33600000000" class="float-btn float-call" aria-label="Appeler">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.6 10.8a15.7 15.7 0 0 0 6.6 6.6l2.2-2.2a1.3 1.3 0 0 1 1.3-.3 11 11 0 0 0 3.4.5 1.3 1.3 0 0 1 1.3 1.3v3.2a1.3 1.3 0 0 1-1.3 1.3C10.5 21.2 2.8 13.5 2.8 4.1A1.3 1.3 0 0 1 4.1 2.8h3.2A1.3 1.3 0 0 1 8.6 4.1a11 11 0 0 0 .5 3.4 1.3 1.3 0 0 1-.3 1.3z"/></svg>
+  </a>
+</div>
+
+<script>
+  // Header background on scroll
+  const header = document.getElementById('site-header');
+  window.addEventListener('scroll', () => {
+    header.classList.toggle('scrolled', window.scrollY > 30);
+  });
+
+  // Mobile menu
+  const menuToggle = document.getElementById('menu-toggle');
+  const mobileNav = document.getElementById('mobile-nav');
+  menuToggle.addEventListener('click', () => mobileNav.classList.toggle('open'));
+  mobileNav.querySelectorAll('a').forEach(a => a.addEventListener('click', () => mobileNav.classList.remove('open')));
+
+  // FAQ accordion
+  document.querySelectorAll('.faq-item').forEach(item => {
+    const btn = item.querySelector('.faq-q');
+    const answer = item.querySelector('.faq-a');
+    btn.addEventListener('click', () => {
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item.open').forEach(other => {
+        other.classList.remove('open');
+        other.querySelector('.faq-a').style.maxHeight = null;
+      });
+      if (!isOpen) {
+        item.classList.add('open');
+        answer.style.maxHeight = answer.scrollHeight + 'px';
+      }
+    });
+  });
+
+  // Testimonials scroller
+  const avisScroll = document.getElementById('avis-scroll');
+  document.getElementById('avis-prev').addEventListener('click', () => avisScroll.scrollBy({ left: -320, behavior: 'smooth' }));
+  document.getElementById('avis-next').addEventListener('click', () => avisScroll.scrollBy({ left: 320, behavior: 'smooth' }));
+
+  // Open / closed status based on business hours
+  (function setStatus(){
+    const badge = document.getElementById('status-badge');
+    const text = document.getElementById('status-text');
+    const now = new Date();
+    const day = now.getDay(); // 0 = Sunday
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    let open = false;
+    if (day >= 1 && day <= 5) { // Lundi-Vendredi
+      open = minutes >= 9 * 60 && minutes < 18 * 60 + 30;
+    } else if (day === 6) { // Samedi
+      open = minutes >= 9 * 60 && minutes < 17 * 60;
+    }
+    badge.classList.add(open ? 'open' : 'closed');
+    text.textContent = open ? 'Ouvert actuellement' : 'Fermé actuellement';
+  })();
+
+  // Devis form -> WhatsApp
+  document.getElementById('devis-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    const nom = document.getElementById('f-nom').value;
+    const tel = document.getElementById('f-tel').value;
+    const service = document.getElementById('f-service').value;
+    const ville = document.getElementById('f-ville').value;
+    const message = document.getElementById('f-message').value;
+    let texte = `Bonjour, je souhaite un devis.\nNom : ${nom}\nTéléphone : ${tel}\nService : ${service}`;
+    if (ville) texte += `\nVille : ${ville}`;
+    if (message) texte += `\nMessage : ${message}`;
+    window.open('https://wa.me/33600000000?text=' + encodeURIComponent(texte), '_blank');
+  });
+
+  // Hero key teeth subtle entrance
+  window.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.key-tooth').forEach((el, i) => {
+      el.style.transformOrigin = 'top';
+      el.style.transform = 'scaleY(0)';
+      el.style.transition = `transform 0.4s ease ${0.5 + i * 0.08}s`;
+      requestAnimationFrame(() => requestAnimationFrame(() => { el.style.transform = 'scaleY(1)'; }));
+    });
+  });
+
+  // Scroll-reveal animations
+  const revealSelectors = '.section-head, .service-card, .price-table tr, .why-list li, .zones-chips, .map-frame, .avis-card, .faq-item, .form-field, .pricing-aside, .status-badge, .hours-table tr';
+  const revealEls = document.querySelectorAll(revealSelectors);
+  const revealObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        revealObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+  revealEls.forEach(el => revealObserver.observe(el));
+
+  // Subtle parallax on the hero key, desktop only, respects reduced motion
+  const heroKey = document.querySelector('.hero-key');
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (heroKey && !prefersReducedMotion && window.matchMedia('(min-width: 901px)').matches) {
+    document.querySelector('.hero').addEventListener('mousemove', (e) => {
+      const x = (e.clientX / window.innerWidth - 0.5) * 14;
+      const y = (e.clientY / window.innerHeight - 0.5) * 14;
+      heroKey.style.transform = `translate(${x}px, ${y}px)`;
+    });
+  }
+</script>
+
+</body>
+</html>
