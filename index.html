@@ -879,20 +879,25 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
       style={{ background: "rgba(8,6,13,0.92)", backdropFilter: "blur(10px)", borderColor: COLORS.line }}
       onMouseLeave={scheduleClose}
     >
-      <div className="max-w-7xl mx-auto relative flex items-center justify-end lg:justify-between pl-4 pr-5 sm:pl-5 sm:pr-6 md:px-8 h-16">
-        {/* Logo — image officielle fournie. Centré horizontalement sur mobile (même avec panier
-            + menu hamburger à droite) via positionnement absolu ; redevient un élément de flux
-            normal (aligné à gauche) à partir du palier desktop "lg", pour ne rien changer côté desktop. */}
+      <div className="max-w-7xl mx-auto h-16 grid grid-cols-[1fr_auto_1fr] lg:flex lg:justify-between items-center gap-2 pl-4 pr-5 sm:pl-5 sm:pr-6 md:px-8">
+        {/* Colonne gauche — vide sur mobile, uniquement pour équilibrer symétriquement la grille
+            3 colonnes (1fr / auto / 1fr) et garantir un logo mathématiquement centré à l'écran,
+            quelle que soit la largeur du groupe panier+menu à droite. Disparaît en desktop, où
+            l'on repasse en flex classique (logo / nav / actions) via lg:flex + lg:justify-between. */}
+        <div aria-hidden="true" className="lg:hidden" />
+
+        {/* Logo — image officielle fournie, centrée par construction (colonne centrale "auto"
+            d'une grille aux deux colonnes latérales égales). */}
         <button
           onClick={() => { go("home"); setOpenMenu(null); }}
-          className="flex items-center leading-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 lg:static lg:left-auto lg:top-auto lg:translate-x-0 lg:translate-y-0"
+          className="flex items-center leading-none justify-self-center lg:justify-self-auto"
           aria-label="Luxury Streetwear — Retour à l'accueil"
         >
           <img
             src={LOGO_SRC}
             alt="Luxury Streetwear"
             draggable="false"
-            className="h-9 sm:h-10 lg:h-11 w-auto object-contain select-none"
+            className="h-9 sm:h-10 lg:h-11 w-auto max-w-none object-contain select-none"
           />
         </button>
 
@@ -930,13 +935,15 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
           ))}
         </nav>
 
-        <div className="flex items-center gap-5 lg:gap-4">
+        {/* Panier + hamburger — toujours à DROITE : colonne "1fr" de droite sur mobile
+            (justify-self-end + justify-end interne), position naturelle à droite en desktop. */}
+        <div className="flex items-center justify-end gap-5 lg:gap-4 justify-self-end lg:justify-self-auto">
           <button onClick={() => go("admin")} className="hidden md:inline text-[11px] uppercase tracking-widest" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
             Admin
           </button>
           <CartIconButton count={cartCount || 0} onClick={onOpenCart} />
           <button
-            className="lg:hidden relative flex flex-col items-center justify-center gap-1.5 p-2.5 -m-2.5"
+            className="lg:hidden relative flex flex-col items-center justify-center gap-1.5 p-2.5 -m-2.5 shrink-0"
             onClick={() => setOpen((o) => !o)}
             aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
             aria-expanded={open}
@@ -1897,10 +1904,13 @@ function ProductGallery({ product }) {
   };
 
   return (
-    <div>
-      {/* Image principale — carrée, cadrage net, produit centré sans vide excessif */}
+    <div className="w-full max-w-full min-w-0">
+      {/* Image principale — carrée, cadrage net, produit centré sans vide excessif.
+          Cadre 100% de la largeur disponible, jamais plus large que l'écran ; l'image est
+          toujours contenue et centrée à l'intérieur (object-contain + flex center), jamais
+          déformée, jamais débordante. */}
       <div
-        className="relative rounded-lg overflow-hidden cursor-zoom-in select-none"
+        className="relative w-full max-w-full rounded-lg overflow-hidden cursor-zoom-in select-none"
         style={{
           aspectRatio: "1/1",
           background: `radial-gradient(120% 100% at 50% 8%, ${COLORS.surface2} 0%, ${COLORS.surface} 55%, #0C0913 100%)`,
@@ -1942,9 +1952,12 @@ function ProductGallery({ product }) {
         </div>
       </div>
 
-      {/* Miniatures — carrées, nettes, cadrage cohérent avec l'image principale */}
+      {/* Miniatures — carrées, nettes, cadrage cohérent avec l'image principale.
+          Rangée en défilement horizontal CONTENU (overflow-x-auto + w-full + min-w-0) : c'est
+          le seul endroit de la page où un défilement horizontal est volontaire et acceptable —
+          il reste strictement à l'intérieur de son propre cadre, jamais sur toute la page. */}
       {product.images.length > 1 && (
-        <div className="flex gap-3 mt-4 overflow-x-auto pb-1">
+        <div className="flex gap-3 mt-4 w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain pb-1">
           {product.images.map((im, i) => (
             <button
               key={i}
@@ -1964,7 +1977,10 @@ function ProductGallery({ product }) {
         </div>
       )}
 
-      {zoomOpen && (
+      {/* Rendu via portail directement dans <body> : la galerie est nichée dans un ancêtre animé
+          (transform CSS actif en permanence pour l'effet d'apparition au scroll), ce qui casserait
+          le positionnement "fixed" plein écran de ce zoom s'il restait dans l'arbre React normal. */}
+      {zoomOpen && ReactDOM.createPortal(
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-10"
           style={{ background: "rgba(5,4,9,0.94)" }}
@@ -2001,8 +2017,27 @@ function ProductGallery({ product }) {
               >›</button>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
+    </div>
+  );
+}
+
+/* Ligne détail produit — libellé au-dessus de la valeur sur mobile (empêche tout débordement
+   horizontal avec des valeurs longues), côte-à-côte à partir de "sm". La valeur revient toujours
+   à la ligne librement (jamais de troncature ni de dépassement d'écran). */
+function DetailRow({ label, value, mono }) {
+  if (value == null || value === "") return null;
+  return (
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
+      <span className="shrink-0">{label}</span>
+      <span
+        className={`break-words sm:text-right ${mono ? "font-mono" : ""}`}
+        style={{ color: COLORS.ink }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -2079,24 +2114,27 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
   };
 
   return (
-    <section className="max-w-7xl mx-auto px-5 md:px-8 py-10">
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-10 overflow-x-hidden">
       <button onClick={() => go("catalog")} className="text-xs uppercase tracking-widest mb-6 inline-flex items-center gap-1.5" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
         ← Retour au catalogue
       </button>
 
-      <div className="grid md:grid-cols-2 gap-10 lg:gap-16">
+      {/* min-w-0 sur les deux colonnes : empêche une grille CSS de forcer la largeur d'un
+          élément (galerie, miniatures, texte long) au-delà de la largeur d'écran disponible —
+          cause racine des débordements horizontaux constatés sur mobile. */}
+      <div className="grid md:grid-cols-2 gap-10 lg:gap-16 w-full max-w-full overflow-x-hidden md:overflow-visible">
         {/* Galerie — dominante */}
-        <Reveal y={22}>
+        <Reveal y={22} className="min-w-0 w-full max-w-full">
           <ProductGallery product={product} />
         </Reveal>
 
         {/* Informations — structure éditoriale */}
-        <Reveal delay={120} y={22}>
-          <div>
+        <Reveal delay={120} y={22} className="min-w-0 w-full max-w-full">
+          <div className="min-w-0">
             <div className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>{brand?.name}</div>
-            <h1 className="mt-2 leading-tight" style={{ fontFamily: "Anton", fontSize: "clamp(30px,4vw,44px)", color: COLORS.ink }}>{product.name.toUpperCase()}</h1>
+            <h1 className="mt-2 leading-tight break-words" style={{ fontFamily: "Anton", fontSize: "clamp(30px,4vw,44px)", color: COLORS.ink }}>{product.name.toUpperCase()}</h1>
             <div className="mt-2 flex items-center gap-3 flex-wrap">
-              <span className="text-xs font-mono" style={{ color: COLORS.inkDim }}>Réf. {product.reference}</span>
+              <span className="text-xs font-mono break-words" style={{ color: COLORS.inkDim }}>Réf. {product.reference}</span>
               {product.price != null && (
                 <span className="text-lg font-semibold" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{product.price} €</span>
               )}
@@ -2110,7 +2148,7 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
             {product.description && (
               <div className="mt-6 max-w-md">
                 <p
-                  className="text-sm leading-relaxed"
+                  className="text-sm leading-relaxed break-words"
                   style={{
                     color: COLORS.inkDim,
                     fontFamily: "Inter",
@@ -2182,33 +2220,36 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
               </div>
             )}
 
-            <div className="mt-8 flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-3 border rounded-sm px-1" style={{ borderColor: COLORS.line }}>
-                <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="w-9 h-11 text-lg" style={{ color: COLORS.ink }} aria-label="Diminuer la quantité">−</button>
-                <span className="text-sm w-5 text-center" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{qty}</span>
-                <button onClick={() => setQty((q) => q + 1)} className="w-9 h-11 text-lg" style={{ color: COLORS.ink }} aria-label="Augmenter la quantité">+</button>
+            <div className="mt-8 flex flex-col xs:flex-row xs:items-center gap-4">
+              <div className="flex items-center justify-center gap-3 border rounded-sm px-1 w-full xs:w-auto" style={{ borderColor: COLORS.line }}>
+                <button onClick={() => setQty((q) => Math.max(1, q - 1))} className="w-9 h-11 text-lg shrink-0" style={{ color: COLORS.ink }} aria-label="Diminuer la quantité">−</button>
+                <span className="text-sm w-5 text-center shrink-0" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{qty}</span>
+                <button onClick={() => setQty((q) => q + 1)} className="w-9 h-11 text-lg shrink-0" style={{ color: COLORS.ink }} aria-label="Augmenter la quantité">+</button>
               </div>
               <button
                 onClick={handleAddToCart}
                 disabled={!product.availability}
-                className="px-7 py-3.5 rounded-sm text-sm font-semibold uppercase tracking-wider transition-transform duration-150 hover:scale-[1.02] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full xs:w-auto xs:flex-1 px-7 py-3.5 rounded-sm text-sm font-semibold uppercase tracking-wider transition-transform duration-150 hover:scale-[1.02] disabled:opacity-40 disabled:cursor-not-allowed whitespace-normal"
                 style={{ background: justAdded ? COLORS.green : COLORS.ink, color: COLORS.bg, fontFamily: "Inter" }}
               >
                 {justAdded ? "Ajouté ✓" : "Ajouter au panier"}
               </button>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-4">
+            <div className="mt-4 flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:gap-4">
               <SolidButton
                 onClick={() => go("contact")}
-                className="!px-8 !py-4 !text-base tracking-wider"
+                className="!px-8 !py-4 !text-base tracking-wider w-full sm:w-auto whitespace-normal"
               >
                 Nous contacter pour ce produit
               </SolidButton>
-              <GhostButton onClick={() => go("catalog")}>Continuer à explorer</GhostButton>
+              <GhostButton onClick={() => go("catalog")} className="w-full sm:w-auto whitespace-normal">Continuer à explorer</GhostButton>
             </div>
 
-            {/* Détails, groupés en accordéon pour éviter le pavé de texte */}
+            {/* Détails, groupés en accordéon pour éviter le pavé de texte.
+                Chaque ligne empile le libellé au-dessus de la valeur sur mobile (la valeur peut
+                être longue et revenir à la ligne librement), et repasse en ligne côte-à-côte à
+                partir de "sm" — comme demandé, plus aucune valeur ne peut sortir de l'écran. */}
             <InfoAccordion
               defaultOpen="details"
               sections={[
@@ -2216,11 +2257,11 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
                   id: "details",
                   label: "Détails du produit",
                   content: (
-                    <div className="space-y-2">
-                      <div className="flex justify-between"><span>Catégorie</span><span style={{ color: COLORS.ink }}>{categoryLabel}</span></div>
-                      <div className="flex justify-between"><span>Marque</span><span style={{ color: COLORS.ink }}>{brand?.name}</span></div>
-                      <div className="flex justify-between"><span>Référence</span><span className="font-mono" style={{ color: COLORS.ink }}>{product.reference}</span></div>
-                      <div className="flex justify-between"><span>Authenticité</span><span style={{ color: COLORS.ink }}>Garantie</span></div>
+                    <div className="space-y-3">
+                      <DetailRow label="Catégorie" value={categoryLabel} />
+                      <DetailRow label="Marque" value={brand?.name} />
+                      <DetailRow label="Référence" value={product.reference} mono />
+                      <DetailRow label="Authenticité" value="Garantie" />
                     </div>
                   ),
                 },
@@ -2228,10 +2269,10 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
                   id: "livraison",
                   label: "Livraison & retours",
                   content: (
-                    <div className="space-y-2">
-                      <div className="flex justify-between"><span>Livraison</span><span style={{ color: COLORS.ink }}>Partout en France</span></div>
-                      <div className="flex justify-between"><span>Main propre</span><span style={{ color: COLORS.ink }}>Paris & IDF</span></div>
-                      <div className="flex justify-between"><span>Service client</span><span style={{ color: COLORS.ink }}>7j/7</span></div>
+                    <div className="space-y-3">
+                      <DetailRow label="Livraison" value="Partout en France" />
+                      <DetailRow label="Main propre" value="Paris & IDF" />
+                      <DetailRow label="Service client" value="7j/7" />
                     </div>
                   ),
                 },
