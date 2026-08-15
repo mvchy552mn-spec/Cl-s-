@@ -409,6 +409,148 @@ async function deleteFromSupabase(imageUrl, accessToken) {
 }
 
 /* ============================================================
+   SUPABASE STORAGE — avis vidéo (bucket "customer-reviews")
+   ------------------------------------------------------------
+   Même principe que product-images : upload/suppression réels via
+   l'API REST Storage. Bucket dédié aux vidéos d'avis clients
+   (distinct du bucket "product-images"), avec ses propres
+   contraintes de type/taille de fichier.
+   ============================================================ */
+
+const SUPABASE_VIDEO_BUCKET = "customer-reviews";
+
+const ACCEPTED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
+const VIDEO_EXT_BY_MIME = {
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/webm": "webm",
+};
+const VIDEO_FILE_INPUT_ACCEPT = "video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm";
+
+// Limite de taille par fichier vidéo (200 Mo) — ajustable selon les besoins.
+const MAX_VIDEO_SIZE_BYTES = 200 * 1024 * 1024;
+
+async function detectRealVideoType(file) {
+  try {
+    const buf = await file.slice(0, 32).arrayBuffer();
+    const b = new Uint8Array(buf);
+    // WEBM / MKV (conteneur EBML)
+    if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return "video/webm";
+    // MP4 / MOV : boîte "ftyp" à l'offset 4, avec un "brand" indiquant le sous-type
+    const ascii = String.fromCharCode(...b.slice(4, 12));
+    if (ascii.startsWith("ftyp")) {
+      const brand = ascii.slice(4, 8).toLowerCase();
+      if (brand.startsWith("qt")) return "video/quicktime";
+      return "video/mp4"; // isom, mp42, mp41, M4V , avc1, etc.
+    }
+  } catch {
+  }
+  return null;
+}
+
+const VIDEO_STEP_LABELS = {
+  selection: "Sélection du fichier",
+  validation: "Vérification du format",
+  connexion: "Connexion à Supabase",
+  upload: "Upload vers Supabase Storage",
+  url: "URL publique générée",
+};
+
+function makeVideoStoragePath(realType) {
+  const ext = VIDEO_EXT_BY_MIME[realType] || "mp4";
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `admin/${Date.now()}-${rand}.${ext}`;
+}
+
+async function uploadVideoToSupabase(file, accessToken, onStep) {
+  const trace = (step, ok, detail) => onStep && onStep(step, ok, detail);
+  if (!accessToken) {
+    trace("connexion", false, "Vous devez être connecté en tant qu'administrateur.");
+    throw new Error("Vous devez être connecté en tant qu'administrateur.");
+  }
+  trace("selection", true, `${file.name || "(sans nom)"} — ${(file.size / (1024 * 1024)).toFixed(1)} Mo`);
+
+  if (file.size > MAX_VIDEO_SIZE_BYTES) {
+    trace("validation", false, `Fichier trop volumineux (max ${(MAX_VIDEO_SIZE_BYTES / (1024 * 1024)).toFixed(0)} Mo)`);
+    throw new Error(`Cette vidéo dépasse la taille maximale autorisée (${(MAX_VIDEO_SIZE_BYTES / (1024 * 1024)).toFixed(0)} Mo).`);
+  }
+
+  const realType = await detectRealVideoType(file);
+  const effectiveType = realType || (ACCEPTED_VIDEO_TYPES.includes(file.type) ? file.type : null);
+  if (!effectiveType) {
+    trace("validation", false, "Format non reconnu (attendu : MP4, MOV ou WEBM)");
+    throw new Error("Ce fichier ne semble pas être une vidéo au format accepté (MP4, MOV, WEBM).");
+  }
+  trace("validation", true, `Format détecté : ${effectiveType}`);
+
+  const path = makeVideoStoragePath(effectiveType);
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${SUPABASE_VIDEO_BUCKET}/${path}`;
+  let res;
+  try {
+    res = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": effectiveType,
+        "apikey": SUPABASE_PUBLISHABLE_KEY,
+        "Authorization": `Bearer ${accessToken}`,
+        "x-upsert": "false",
+      },
+      body: file,
+    });
+  } catch (networkErr) {
+    trace("connexion", false, `Requête réseau impossible vers Supabase : ${networkErr.message || networkErr}`);
+    throw new Error(`Connexion à Supabase impossible : ${networkErr.message || networkErr}`);
+  }
+  trace("connexion", true, `Réponse reçue du serveur Supabase (HTTP ${res.status})`);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      detail = body.message || body.error || JSON.stringify(body);
+    } catch {
+      try { detail = await res.text(); } catch {}
+    }
+    trace("upload", false, detail);
+    throw new Error(`Upload Supabase Storage échoué (${res.status}) : ${detail}`);
+  }
+  trace("upload", true, `Fichier stocké sous ${SUPABASE_VIDEO_BUCKET}/${path}`);
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_VIDEO_BUCKET}/${path}`;
+  trace("url", true, publicUrl);
+  return { publicUrl, path };
+}
+
+function extractVideoStoragePath(videoUrl) {
+  if (!videoUrl) return null;
+  const marker = `/storage/v1/object/public/${SUPABASE_VIDEO_BUCKET}/`;
+  const idx = videoUrl.indexOf(marker);
+  if (idx === -1) return null;
+  return videoUrl.slice(idx + marker.length);
+}
+
+async function deleteVideoFromSupabase(videoUrlOrPath, accessToken) {
+  if (!videoUrlOrPath) return;
+  const path = videoUrlOrPath.includes("/storage/v1/object/")
+    ? extractVideoStoragePath(videoUrlOrPath)
+    : videoUrlOrPath; // déjà un storage_path brut
+  if (!path) return;
+  if (!accessToken) {
+    console.error("Suppression Supabase Storage refusée : administrateur non authentifié.");
+    return;
+  }
+  const deleteUrl = `${SUPABASE_URL}/storage/v1/object/${SUPABASE_VIDEO_BUCKET}/${path}`;
+  const res = await fetch(deleteUrl, {
+    method: "DELETE",
+    headers: {
+      "apikey": SUPABASE_PUBLISHABLE_KEY,
+      "Authorization": `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) {
+    console.error("Suppression Supabase Storage (vidéo) échouée:", res.status, path);
+  }
+}
+
+/* ============================================================
    SUPABASE — table "products" (persistance réelle des fiches produit)
    ------------------------------------------------------------
    Conversion entre le format "row" de la table Supabase (snake_case)
@@ -552,11 +694,14 @@ async function loadReviewsFromSupabase() {
    Même logique que pour "reviews" : conversion row <-> objet React,
    + helper de chargement de la liste complète depuis Supabase.
 
-   Colonnes attendues : id (uuid), first_name (text), video_url (text,
-   nullable), is_visible (boolean), created_at (timestamptz).
+   Colonnes attendues : id (uuid), first_name (text), video_url (text),
+   storage_path (text, nullable), review_text (text, nullable),
+   is_visible (boolean), created_at (timestamptz).
 
-   Aucun fichier vidéo n'est téléchargé ni hébergé : seule l'URL externe
-   (TikTok/Instagram/YouTube…) renseignée par l'admin est enregistrée.
+   La vidéo est réellement uploadée dans Supabase Storage (bucket
+   "customer-reviews") — video_url est l'URL publique générée, et
+   storage_path le chemin exact du fichier dans le bucket (nécessaire
+   pour pouvoir le supprimer proprement lors de la suppression de l'avis).
    ============================================================ */
 
 function rowToVideoTestimonial(row) {
@@ -564,6 +709,8 @@ function rowToVideoTestimonial(row) {
     id: row.id,
     firstName: row.first_name,
     videoUrl: row.video_url || "",
+    storagePath: row.storage_path || "",
+    reviewText: row.review_text || "",
     visible: row.is_visible !== false,
     isDemo: false,
   };
@@ -573,6 +720,8 @@ function videoTestimonialToRow(v) {
   return {
     first_name: v.firstName,
     video_url: v.videoUrl || null,
+    storage_path: v.storagePath || null,
+    review_text: v.reviewText || null,
     is_visible: v.visible !== false,
   };
 }
@@ -1266,7 +1415,7 @@ function Hero({ go }) {
       className="relative overflow-hidden"
       style={{
         background: `linear-gradient(160deg, ${COLORS.bg} 0%, #150F22 55%, ${COLORS.bg} 100%)`,
-        minHeight: "min(880px, 92svh)",
+        minHeight: "min(820px, 86svh)",
       }}
     >
       {/* Fond cosmique — halos violet / magenta / bleu électrique, étoiles discrètes */}
@@ -1302,45 +1451,11 @@ function Hero({ go }) {
         />
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-5 md:px-10 pt-14 pb-16 md:pt-20 md:pb-16 relative grid md:grid-cols-[0.92fr_1.18fr] gap-12 md:gap-8 items-center">
+      <div className="max-w-[1600px] mx-auto px-5 md:px-10 pt-8 pb-10 md:pt-20 md:pb-16 relative grid md:grid-cols-[0.92fr_1.18fr] gap-8 md:gap-8 items-center">
         {/* Texte — composition éditoriale */}
         <div className="relative z-10 order-2 md:order-1">
-          <div style={introStyle(stagger.eyebrow, 12)}>
-            <Eyebrow>Collection permanente</Eyebrow>
-          </div>
-
-          <div style={introStyle(stagger.title, 22)}>
-            <h1
-              className="mt-5 leading-[0.9]"
-              style={{
-                fontFamily: "Anton",
-                fontSize: "clamp(56px, 11vw, 148px)",
-                color: COLORS.ink,
-                letterSpacing: 0.5,
-                textShadow: "0 0 60px rgba(139,47,232,0.25)",
-              }}
-            >
-              LUXURY
-              <br />
-              <span className="neon-text">STREETWEAR</span>
-            </h1>
-          </div>
-
-          <div style={introStyle(stagger.subtitle, 16)}>
-            <p
-              className="mt-7 text-base md:text-lg max-w-md leading-relaxed"
-              style={{
-                fontFamily: "Inter",
-                color: COLORS.inkDim,
-              }}
-            >
-              Une autre vision du style. Streetwear premium, matières
-              sélectionnées, silhouettes conçues pour durer.
-            </p>
-          </div>
-
           <div style={introStyle(stagger.cta, 14)}>
-            <div className="mt-10 flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-4">
               <button
                 onClick={() => go("catalog")}
                 className="hero-cta-primary px-8 py-4 text-sm uppercase tracking-widest font-semibold rounded-sm transition-transform active:scale-95"
@@ -1442,27 +1557,6 @@ function Hero({ go }) {
               </div>
             </div>
           </div>
-
-          {/* Badge — semble légèrement flotter au chevauchement des deux visuels */}
-          <div
-            className="absolute left-1/2 -translate-x-1/2"
-            style={{
-              bottom: "-18px",
-              ...introStyle(stagger.cta + 60, 10),
-            }}
-          >
-            <div
-              className="px-5 py-2.5 text-[11px] uppercase tracking-widest font-semibold rounded-sm whitespace-nowrap hero-badge-float"
-              style={{
-                background: `linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta})`,
-                color: "#08060D",
-                fontFamily: "Inter",
-                boxShadow: "0 0 24px rgba(255,46,196,0.55)",
-              }}
-            >
-              Édition permanente — LXS
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1479,44 +1573,6 @@ function Hero({ go }) {
             Découvrir
           </span>
           <span className="hero-scroll-dot" aria-hidden />
-        </div>
-      </div>
-
-      {/* Informations */}
-      <div
-        className="border-t relative z-10"
-        style={{ borderColor: COLORS.line, marginTop: 8 }}
-      >
-        <div className="max-w-[1600px] mx-auto px-5 md:px-10 py-5 grid grid-cols-3 gap-4 text-center">
-          {[
-            ["Livraison", "Partout en France"],
-            ["Remise en main propre", "Paris & Île-de-France"],
-            ["Service client", "7 jours / 7"],
-          ].map(([t, s], i) => (
-            <Reveal key={t} delay={i * 60} y={10}>
-              <div>
-                <div
-                  className="text-[11px] md:text-xs uppercase tracking-widest font-semibold"
-                  style={{
-                    color: COLORS.ink,
-                    fontFamily: "Inter",
-                  }}
-                >
-                  {t}
-                </div>
-
-                <div
-                  className="text-[10px] md:text-xs mt-1"
-                  style={{
-                    color: COLORS.inkDim,
-                    fontFamily: "Inter",
-                  }}
-                >
-                  {s}
-                </div>
-              </div>
-            </Reveal>
-          ))}
         </div>
       </div>
     </section>
@@ -2424,17 +2480,6 @@ function StarRating({ rating, size = 14 }) {
   );
 }
 
-/* Détection simple de la plateforme pour affichage d'un badge — reste un simple lien,
-   aucune vidéo n'est téléchargée ni hébergée : uniquement l'URL renseignée par l'admin. */
-function detectVideoPlatform(url) {
-  if (!url) return null;
-  const u = url.toLowerCase();
-  if (u.includes("tiktok.com")) return "TikTok";
-  if (u.includes("instagram.com")) return "Instagram";
-  if (u.includes("youtube.com") || u.includes("youtu.be")) return "YouTube";
-  return "Vidéo";
-}
-
 function ReviewCard({ review }) {
   const initials = (review.firstName || "?").trim().charAt(0).toUpperCase();
   return (
@@ -2594,10 +2639,23 @@ function ReviewsCarousel({ reviews }) {
 
 /* Avis vidéo — n'héberge jamais le média : simple lien externe cliquable (TikTok / Instagram / YouTube / autre). */
 function VideoTestimonialCard({ testimonial }) {
-  const platform = detectVideoPlatform(testimonial.videoUrl);
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const hasUrl = !!testimonial.videoUrl;
 
-  const CardInner = (
+  const togglePlay = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.paused) {
+      el.play();
+      setIsPlaying(true);
+    } else {
+      el.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  return (
     <div
       className="review-card relative shrink-0 rounded-lg overflow-hidden transition-all duration-300"
       style={{
@@ -2608,45 +2666,48 @@ function VideoTestimonialCard({ testimonial }) {
         boxShadow: "0 20px 40px -24px rgba(0,0,0,0.6)",
       }}
     >
-      <div
-        aria-hidden
-        className="absolute inset-0 opacity-70"
-        style={{
-          background: `radial-gradient(120% 80% at 50% 100%, rgba(139,47,232,0.28), transparent 60%)`,
-        }}
-      />
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
+      {hasUrl ? (
+        <>
+          <video
+            ref={videoRef}
+            src={testimonial.videoUrl}
+            className="absolute inset-0 w-full h-full object-cover"
+            playsInline
+            controls={isPlaying}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+            preload="metadata"
+          />
+          {!isPlaying && (
+            <button
+              onClick={togglePlay}
+              aria-label={`Lire le témoignage vidéo de ${testimonial.firstName}`}
+              className="absolute inset-0 flex flex-col items-center justify-end gap-2 p-4 text-center"
+              style={{ background: "linear-gradient(180deg, transparent 55%, rgba(8,6,13,0.85))" }}
+            >
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center mb-2"
+                style={{
+                  background: `linear-gradient(135deg, ${COLORS.purple}, ${COLORS.magenta})`,
+                  boxShadow: "0 0 18px rgba(255,46,196,0.5)",
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="#08060D"><path d="M4 2.5v11l9-5.5-9-5.5z" /></svg>
+              </div>
+              <div className="text-xs font-semibold" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{testimonial.firstName}</div>
+            </button>
+          )}
+        </>
+      ) : (
         <div
-          className="w-12 h-12 rounded-full flex items-center justify-center"
+          aria-hidden
+          className="absolute inset-0 opacity-70"
           style={{
-            background: `linear-gradient(135deg, ${COLORS.purple}, ${COLORS.magenta})`,
-            boxShadow: "0 0 18px rgba(255,46,196,0.5)",
+            background: `radial-gradient(120% 80% at 50% 100%, rgba(139,47,232,0.28), transparent 60%)`,
           }}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="#08060D"><path d="M4 2.5v11l9-5.5-9-5.5z" /></svg>
-        </div>
-        <div className="text-xs font-semibold" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{testimonial.firstName}</div>
-        {platform && (
-          <span
-            className="text-[10px] uppercase tracking-widest px-2 py-1 rounded-sm"
-            style={{ background: "rgba(8,6,13,0.5)", color: COLORS.inkDim, fontFamily: "Inter" }}
-          >
-            {platform}
-          </span>
-        )}
-        {!hasUrl && (
-          <span className="text-[10px]" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>URL vidéo à venir</span>
-        )}
-      </div>
+        />
+      )}
     </div>
-  );
-
-  if (!hasUrl) return CardInner;
-
-  return (
-    <a href={testimonial.videoUrl} target="_blank" rel="noopener noreferrer" aria-label={`Voir le témoignage vidéo de ${testimonial.firstName}`}>
-      {CardInner}
-    </a>
   );
 }
 
@@ -2915,6 +2976,12 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
   const [debugLog, setDebugLog] = useState([]);
   const [dragIndex, setDragIndex] = useState(null);
   const [isDraggingOverDrop, setIsDraggingOverDrop] = useState(false);
+
+  // ----- Upload de vidéos d'avis (bucket "customer-reviews") -----
+  const videoFileInputRef = useRef(null);
+  const [videoUploadStatus, setVideoUploadStatus] = useState("");
+  const [videoDebugLog, setVideoDebugLog] = useState([]);
+  const [isDraggingOverVideoDrop, setIsDraggingOverVideoDrop] = useState(false);
 
   const tabs = [
     ["products", "Produits"],
@@ -3254,9 +3321,81 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
   };
 
   /* ----- Avis vidéo : source de vérité = Supabase (table "video_testimonials") -----
-     Même logique que saveReview/deleteReview/toggleReviewVisibility. */
+     Le fichier vidéo est uploadé immédiatement dans Supabase Storage
+     (bucket "customer-reviews") dès sa sélection, exactement comme pour
+     les photos produit. saveVideoTestimonial n'enregistre alors que les
+     métadonnées (URL déjà obtenue, prénom, texte, visibilité). */
+
+  const openVideoFilePicker = () => videoFileInputRef.current?.click();
+
+  const handleVideoFileSelected = async (fileList) => {
+    const files = Array.from(fileList || []);
+    const file = files[0]; // un seul fichier vidéo par avis
+    if (!file) return;
+
+    setVideoUploadStatus("uploading");
+    setVideoDebugLog([]);
+
+    let accessToken;
+    try {
+      ({ accessToken } = await requireAdmin());
+    } catch (err) {
+      const detail = err && err.message ? err.message : String(err);
+      setVideoDebugLog([{ step: "connexion", ok: false, detail }]);
+      setVideoUploadStatus("done");
+      return;
+    }
+
+    const fileName = file.name || "(vidéo sans nom)";
+    const onStep = (step, ok, detail) => {
+      setVideoDebugLog((prev) => [...prev, { fileName, step, ok, detail }]);
+    };
+
+    try {
+      // Si une vidéo était déjà présente sur cet avis (remplacement), on la
+      // supprime du Storage pour ne pas laisser de fichier orphelin.
+      if (editingVideoTestimonial.storagePath) {
+        await deleteVideoFromSupabase(editingVideoTestimonial.storagePath, accessToken);
+      }
+      const uploaded = await uploadVideoToSupabase(file, accessToken, onStep);
+      setEditingVideoTestimonial((v) => ({
+        ...v,
+        videoUrl: uploaded.publicUrl,
+        storagePath: uploaded.path,
+      }));
+    } catch (err) {
+      // L'erreur est déjà tracée dans le journal via onStep ; rien de plus à faire.
+    }
+    setVideoUploadStatus("done");
+  };
+
+  const onVideoFileInputChange = (e) => {
+    handleVideoFileSelected(e.target.files);
+    e.target.value = "";
+  };
+
+  const onVideoDropZoneDragOver = (e) => { e.preventDefault(); setIsDraggingOverVideoDrop(true); };
+  const onVideoDropZoneDragLeave = () => setIsDraggingOverVideoDrop(false);
+  const onVideoDropZoneDrop = (e) => {
+    e.preventDefault();
+    setIsDraggingOverVideoDrop(false);
+    handleVideoFileSelected(e.dataTransfer.files);
+  };
+
+  const removeVideoFile = async () => {
+    const storagePath = editingVideoTestimonial.storagePath;
+    setEditingVideoTestimonial((v) => ({ ...v, videoUrl: "", storagePath: "" }));
+    if (!storagePath) return;
+    try {
+      const { accessToken } = await requireAdmin();
+      await deleteVideoFromSupabase(storagePath, accessToken);
+    } catch (err) {
+      console.error("Suppression du fichier vidéo refusée :", err && err.message ? err.message : err);
+    }
+  };
+
   const saveVideoTestimonial = async () => {
-    if (!editingVideoTestimonial.firstName) return;
+    if (!editingVideoTestimonial.firstName || !editingVideoTestimonial.videoUrl) return;
     setSaveErrorVideo("");
     try {
       await requireAdmin();
@@ -3296,10 +3435,16 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
   const deleteVideoTestimonial = async (id) => {
     setDeleteErrorVideo("");
     try {
-      await requireAdmin();
+      const { accessToken } = await requireAdmin();
       const client = await getSupabaseAuthClient();
+      // Retrouver le storage_path de la vidéo avant de supprimer la ligne,
+      // afin de ne pas laisser de fichier orphelin dans le bucket.
+      const target = videoTestimonials.find((v) => v.id === id);
       const { error } = await client.from("video_testimonials").delete().eq("id", id);
       if (error) throw error;
+      if (target && target.storagePath) {
+        await deleteVideoFromSupabase(target.storagePath, accessToken);
+      }
       if (onReloadVideoTestimonials) {
         await onReloadVideoTestimonials();
       }
@@ -3812,7 +3957,7 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
 
           <div className="flex items-center justify-between mb-3">
             <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>AVIS VIDÉO</div>
-            <SolidButton onClick={() => setEditingVideoTestimonial({ id: null, firstName: "", videoUrl: "", visible: true })}>+ Ajouter une vidéo</SolidButton>
+            <SolidButton onClick={() => setEditingVideoTestimonial({ id: null, firstName: "", videoUrl: "", storagePath: "", reviewText: "", visible: true })}>📹 Ajouter une vidéo</SolidButton>
           </div>
           {videoTestimonialsError && (
             <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
@@ -3822,14 +3967,40 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
           {videoTestimonialsLoading && (
             <p className="text-xs mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Chargement des avis vidéo depuis Supabase…</p>
           )}
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
             {videoTestimonials.map((v) => (
-              <div key={v.id} className="p-4 rounded-sm border" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{v.firstName}</div>
-                  {v.isDemo && <span className="text-[10px] uppercase tracking-widest" style={{ color: COLORS.goldDim, fontFamily: "Inter" }}>Démo</span>}
+              <div key={v.id} className="p-3 rounded-sm border" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
+                <div className="flex gap-3">
+                  {v.videoUrl ? (
+                    <video
+                      src={v.videoUrl}
+                      className="rounded-sm object-cover shrink-0"
+                      style={{ width: 72, height: 96, background: COLORS.surface2 }}
+                      muted
+                      playsInline
+                      preload="metadata"
+                    />
+                  ) : (
+                    <div
+                      className="rounded-sm flex items-center justify-center shrink-0 text-[10px] text-center px-1"
+                      style={{ width: 72, height: 96, background: COLORS.surface2, color: COLORS.inkDim, fontFamily: "Inter" }}
+                    >
+                      Aucune vidéo
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold truncate" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{v.firstName}</div>
+                      {v.isDemo && <span className="text-[10px] uppercase tracking-widest shrink-0" style={{ color: COLORS.goldDim, fontFamily: "Inter" }}>Démo</span>}
+                    </div>
+                    {v.reviewText && (
+                      <p className="text-xs mt-1 line-clamp-3" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{v.reviewText}</p>
+                    )}
+                    <div className="text-[10px] uppercase tracking-widest mt-1" style={{ color: v.visible ? COLORS.green : COLORS.inkDim, fontFamily: "Inter" }}>
+                      {v.visible ? "Visible sur le site" : "Masqué"}
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs mt-1 break-all" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{v.videoUrl || "Aucune URL renseignée"}</p>
                 <div className="flex gap-3 mt-3 items-center">
                   <button onClick={() => setEditingVideoTestimonial(v)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta }}>Modifier</button>
                   <button onClick={() => toggleVideoVisibility(v)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim }}>
@@ -3885,14 +4056,97 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
       {tab === "reviews" && editingVideoTestimonial && (
         <div className="max-w-md">
           <div style={{ fontFamily: "Anton", fontSize: 22, color: COLORS.ink, marginBottom: 16 }}>{editingVideoTestimonial.id ? "MODIFIER LA VIDÉO" : "NOUVELLE VIDÉO"}</div>
-          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Prénom</label>
+
+          <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Vidéo</label>
+
+          {editingVideoTestimonial.videoUrl ? (
+            <div className="mb-4">
+              <video
+                key={editingVideoTestimonial.videoUrl}
+                src={editingVideoTestimonial.videoUrl}
+                controls
+                playsInline
+                className="rounded-sm w-full"
+                style={{ maxHeight: 360, background: "#000", aspectRatio: "9/16", objectFit: "contain" }}
+              />
+              <div className="flex gap-3 mt-2">
+                <button onClick={openVideoFilePicker} className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta }}>Remplacer la vidéo</button>
+                <button onClick={removeVideoFile} className="text-xs uppercase tracking-widest" style={{ color: "#FF5C7A" }}>Supprimer la vidéo</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div
+                onDragOver={onVideoDropZoneDragOver}
+                onDragLeave={onVideoDropZoneDragLeave}
+                onDrop={onVideoDropZoneDrop}
+                onClick={openVideoFilePicker}
+                className="flex flex-col items-center justify-center gap-2 px-4 py-8 rounded-sm text-center cursor-pointer transition-colors mb-2"
+                style={{
+                  border: `2px dashed ${isDraggingOverVideoDrop ? COLORS.magenta : COLORS.line}`,
+                  background: isDraggingOverVideoDrop ? COLORS.surface2 : "transparent",
+                }}
+              >
+                <span style={{ fontSize: 22 }}>📹</span>
+                <span className="text-sm font-semibold" style={{ fontFamily: "Inter", color: COLORS.ink }}>
+                  Glissez-déposez une vidéo ici
+                </span>
+                <span className="text-xs" style={{ fontFamily: "Inter", color: COLORS.inkDim }}>
+                  ou cliquez pour choisir depuis mon téléphone / ordinateur
+                </span>
+              </div>
+              <div className="mb-4">
+                <GhostButton onClick={openVideoFilePicker}>📹 Choisir une vidéo</GhostButton>
+              </div>
+            </>
+          )}
+
+          <input
+            ref={videoFileInputRef}
+            type="file"
+            accept={VIDEO_FILE_INPUT_ACCEPT}
+            className="hidden"
+            onChange={onVideoFileInputChange}
+          />
+
+          {videoUploadStatus === "uploading" && (
+            <div className="text-xs mb-3" style={{ fontFamily: "Inter", color: COLORS.magenta }}>
+              Import de la vidéo en cours…
+            </div>
+          )}
+          {videoUploadStatus === "done" && videoDebugLog.length > 0 && videoDebugLog.every((l) => l.ok) && (
+            <div className="text-xs mb-3" style={{ fontFamily: "Inter", color: COLORS.green }}>
+              Vidéo importée ✓
+            </div>
+          )}
+          {videoDebugLog.length > 0 && (
+            <div className="mb-4 rounded-sm overflow-hidden" style={{ border: `1px solid ${COLORS.line}` }}>
+              <div className="px-3 py-2 text-[10px] uppercase tracking-widest" style={{ background: COLORS.surface2, color: COLORS.inkDim, fontFamily: "Inter" }}>
+                Journal d'import
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                {videoDebugLog.map((l, idx) => (
+                  <div key={idx} className="px-3 py-2 border-t text-[11px] flex items-start gap-1.5" style={{ borderColor: COLORS.line, fontFamily: "Inter", color: l.ok ? COLORS.inkDim : "#FF5C7A" }}>
+                    <span>{l.ok ? "✅" : "❌"}</span>
+                    <span>
+                      <strong>{VIDEO_STEP_LABELS[l.step] || l.step}</strong>
+                      {l.detail ? ` — ${l.detail}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="text-[11px] mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+            Formats acceptés : MP4, MOV, WEBM. Taille maximale : {(MAX_VIDEO_SIZE_BYTES / (1024 * 1024)).toFixed(0)} Mo par vidéo.
+          </p>
+
+          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Nom du client</label>
           <input className="w-full px-3 py-2 text-sm rounded-sm mb-4" style={selectStyle} value={editingVideoTestimonial.firstName} onChange={(e) => setEditingVideoTestimonial({ ...editingVideoTestimonial, firstName: e.target.value })} />
 
-          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>URL de la vidéo (TikTok, Instagram, YouTube…)</label>
-          <input className="w-full px-3 py-2 text-sm rounded-sm mb-4" style={selectStyle} value={editingVideoTestimonial.videoUrl} onChange={(e) => setEditingVideoTestimonial({ ...editingVideoTestimonial, videoUrl: e.target.value })} placeholder="https://…" />
-          <p className="text-[11px] mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
-            Aucune vidéo n'est téléchargée ni hébergée : seul ce lien externe est enregistré et ouvert dans un nouvel onglet.
-          </p>
+          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Avis (facultatif)</label>
+          <textarea rows={3} className="w-full px-3 py-2 text-sm rounded-sm mb-4" style={selectStyle} value={editingVideoTestimonial.reviewText} onChange={(e) => setEditingVideoTestimonial({ ...editingVideoTestimonial, reviewText: e.target.value })} />
 
           <label className="flex items-center gap-2 text-sm mb-4" style={{ fontFamily: "Inter", color: COLORS.ink }}>
             <input type="checkbox" checked={editingVideoTestimonial.visible} onChange={(e) => setEditingVideoTestimonial({ ...editingVideoTestimonial, visible: e.target.checked })} /> Afficher sur le site
@@ -3905,7 +4159,7 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
           )}
           <div className="flex gap-3">
             <SolidButton onClick={saveVideoTestimonial}>{savingVideo ? "Enregistrement…" : "Enregistrer"}</SolidButton>
-            <GhostButton onClick={() => setEditingVideoTestimonial(null)}>Annuler</GhostButton>
+            <GhostButton onClick={() => { setEditingVideoTestimonial(null); setVideoUploadStatus(""); setVideoDebugLog([]); }}>Annuler</GhostButton>
           </div>
         </div>
       )}
