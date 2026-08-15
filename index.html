@@ -739,11 +739,16 @@ function SolidButton({ children, onClick, className = "" }) {
 
 /* ---------------- Header ---------------- */
 
-function Header({ route, go, cartCount, setCategoryFilter, setSelectedBrandId, onOpenCart }) {
+function Header({ route, go, cartCount, categories, brands, products, setCategoryFilter, setBrandFilter, setSelectedBrandId, onOpenCart }) {
   const [open, setOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState(null); // "categories" | "brands" | null (desktop mega-menu)
-  const [mobileExpanded, setMobileExpanded] = useState(null);
+  const [hoveredCategory, setHoveredCategory] = useState(null); // desktop mega-menu : catégorie survolée
+  const [mobileLevel, setMobileLevel] = useState(null); // null = niveau 1 (racine) | { id, name } = niveau 2 (marques de la catégorie)
   const closeTimer = useRef(null);
+
+  const CATS = categories && categories.length ? categories : CATEGORIES;
+  const BRAND_LIST = brands && brands.length ? brands : [];
+  const PRODUCT_LIST = products || [];
 
   const NAV = [
     { route: "home", label: "Accueil" },
@@ -751,29 +756,70 @@ function Header({ route, go, cartCount, setCategoryFilter, setSelectedBrandId, o
     { route: "catalog-new", label: "Nouveautés" },
     { route: "collections", label: "Collections" },
     { route: "brands", label: "Marques", dropdown: "brands" },
-    { route: "about", label: "À propos" },
     { route: "contact", label: "Contact" },
   ];
 
   const openDropdown = (key) => {
     if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
     setOpenMenu(key);
+    if (key === "categories") setHoveredCategory((h) => h || (CATS[0] && CATS[0].id) || null);
   };
   const scheduleClose = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = setTimeout(() => setOpenMenu(null), 160);
   };
 
+  /* Marques ayant réellement au moins un produit dans la catégorie donnée
+     — calculé dynamiquement à partir des données Supabase (products/brands),
+     jamais d'une liste codée en dur. */
+  const brandsInCategory = (catId) => {
+    if (!catId || catId === "all") return BRAND_LIST;
+    const ids = new Set(PRODUCT_LIST.filter((p) => p.categoryId === catId).map((p) => p.brandId));
+    return BRAND_LIST.filter((b) => ids.has(b.id));
+  };
+
   const goCategory = (catId) => {
     setCategoryFilter(catId);
+    setBrandFilter("all");
     go("catalog");
     setOpenMenu(null);
+    setOpen(false);
+    setMobileLevel(null);
+  };
+  const goCategoryBrand = (catId, brandId) => {
+    setCategoryFilter(catId);
+    setBrandFilter(brandId);
+    go("catalog");
+    setOpenMenu(null);
+    setOpen(false);
+    setMobileLevel(null);
   };
   const goBrand = (brandId) => {
     setSelectedBrandId(brandId);
     go("brands");
     setOpenMenu(null);
+    setOpen(false);
+    setMobileLevel(null);
   };
+
+  const closeMobileMenu = () => {
+    setOpen(false);
+    setMobileLevel(null);
+  };
+
+  /* Verrouille le scroll de la page derrière le menu plein écran mobile,
+     et permet de le fermer avec la touche Échap. */
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") closeMobileMenu(); };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   return (
     <header
@@ -827,18 +873,19 @@ function Header({ route, go, cartCount, setCategoryFilter, setSelectedBrandId, o
           </button>
           <CartIconButton count={cartCount || 0} onClick={onOpenCart} />
           <button
-            className="lg:hidden flex flex-col gap-1.5 p-2"
+            className="lg:hidden relative flex flex-col items-center justify-center gap-1.5 p-2"
             onClick={() => setOpen((o) => !o)}
-            aria-label="Menu"
+            aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
+            aria-expanded={open}
           >
-            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block" }} />
-            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block" }} />
-            <span style={{ width: 14, height: 2, background: COLORS.magenta, display: "block" }} />
+            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block", transition: "transform .2s ease, opacity .2s ease", transform: open ? "translateY(3.5px) rotate(45deg)" : "none" }} />
+            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block", transition: "opacity .15s ease", opacity: open ? 0 : 1 }} />
+            <span style={{ width: open ? 22 : 14, height: 2, background: open ? COLORS.ink : COLORS.magenta, display: "block", transition: "transform .2s ease, width .2s ease", transform: open ? "translateY(-3.5px) rotate(-45deg)" : "none" }} />
           </button>
         </div>
       </div>
 
-      {/* Méga-menu desktop */}
+      {/* Méga-menu desktop — catégorie survolée à gauche, marques réellement disponibles (Supabase) à droite */}
       <div
         className="hidden lg:block absolute left-0 right-0 top-full"
         style={{
@@ -856,29 +903,67 @@ function Header({ route, go, cartCount, setCategoryFilter, setSelectedBrandId, o
       >
         <div className="max-w-7xl mx-auto px-8 py-8">
           {openMenu === "categories" && (
-            <div className="grid grid-cols-3 xl:grid-cols-6 gap-7">
-              {CATEGORIES.map((c) => (
-                <button key={c.id} onClick={() => goCategory(c.id)} className="text-left group">
-                  <div className="text-[10px] tracking-widest" style={{ fontFamily: "IBM Plex Mono", color: COLORS.goldDim }}>{c.tag}</div>
-                  <div
-                    className="mt-1.5 text-sm uppercase tracking-wide font-semibold transition-colors"
-                    style={{ fontFamily: "Inter", color: COLORS.ink }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.magenta)}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.ink)}
+            <div className="grid grid-cols-12 gap-8">
+              <div className="col-span-4 flex flex-col gap-1 pr-6 border-r" style={{ borderColor: COLORS.line }}>
+                {CATS.map((c) => (
+                  <button
+                    key={c.id}
+                    onMouseEnter={() => setHoveredCategory(c.id)}
+                    onClick={() => goCategory(c.id)}
+                    className="text-left px-3 py-2.5 rounded-sm flex items-center justify-between transition-colors"
+                    style={{ background: hoveredCategory === c.id ? COLORS.surface2 : "transparent" }}
                   >
-                    {c.name}
-                  </div>
-                  <div className="mt-1 text-xs leading-snug" style={{ fontFamily: "Inter", color: COLORS.inkDim }}>{c.desc}</div>
+                    <div>
+                      <div className="text-[10px] tracking-widest" style={{ fontFamily: "IBM Plex Mono", color: COLORS.goldDim }}>{c.tag}</div>
+                      <div className="mt-1 text-sm uppercase tracking-wide font-semibold" style={{ fontFamily: "Inter", color: hoveredCategory === c.id ? COLORS.magenta : COLORS.ink }}>{c.name}</div>
+                    </div>
+                    <span style={{ color: COLORS.inkDim }}>→</span>
+                  </button>
+                ))}
+                <button onClick={() => goCategory("all")} className="text-left pt-4 mt-2 border-t" style={{ borderColor: COLORS.line }}>
+                  <span className="text-xs uppercase tracking-widest font-semibold" style={{ fontFamily: "Inter", color: COLORS.magenta }}>Voir tout le catalogue →</span>
                 </button>
-              ))}
-              <button onClick={() => goCategory("all")} className="text-left col-span-3 xl:col-span-6 pt-5 mt-1 border-t" style={{ borderColor: COLORS.line }}>
-                <span className="text-xs uppercase tracking-widest font-semibold" style={{ fontFamily: "Inter", color: COLORS.magenta }}>Voir tout le catalogue →</span>
-              </button>
+              </div>
+              <div className="col-span-8">
+                {(() => {
+                  const activeCat = CATS.find((c) => c.id === hoveredCategory) || CATS[0];
+                  if (!activeCat) return null;
+                  const catBrands = brandsInCategory(activeCat.id);
+                  return (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-widest mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+                        Marques disponibles — {activeCat.name}
+                      </div>
+                      {catBrands.length === 0 ? (
+                        <p className="text-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucune marque disponible pour le moment dans cette catégorie.</p>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-6">
+                          {catBrands.map((b) => (
+                            <button key={b.id} onClick={() => goCategoryBrand(activeCat.id, b.id)} className="text-left group">
+                              <div
+                                className="text-sm uppercase tracking-wide font-semibold transition-colors"
+                                style={{ fontFamily: "Inter", color: COLORS.ink }}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.magenta)}
+                                onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.ink)}
+                              >
+                                {b.name}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <button onClick={() => goCategory(activeCat.id)} className="text-left block pt-5 mt-6 border-t" style={{ borderColor: COLORS.line }}>
+                        <span className="text-xs uppercase tracking-widest font-semibold" style={{ fontFamily: "Inter", color: COLORS.magenta }}>Voir tous les {activeCat.name} →</span>
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           )}
           {openMenu === "brands" && (
             <div className="grid grid-cols-3 gap-7">
-              {BRANDS.map((b) => (
+              {BRAND_LIST.map((b) => (
                 <button key={b.id} onClick={() => goBrand(b.id)} className="text-left group">
                   <div
                     className="text-sm uppercase tracking-wide font-semibold transition-colors"
@@ -891,6 +976,9 @@ function Header({ route, go, cartCount, setCategoryFilter, setSelectedBrandId, o
                   <div className="mt-1 text-xs leading-snug" style={{ fontFamily: "Inter", color: COLORS.inkDim }}>{b.description}</div>
                 </button>
               ))}
+              {BRAND_LIST.length === 0 && (
+                <p className="text-sm col-span-3" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Chargement des marques…</p>
+              )}
               <button onClick={() => go("brands")} className="text-left col-span-3 pt-5 mt-1 border-t" style={{ borderColor: COLORS.line }}>
                 <span className="text-xs uppercase tracking-widest font-semibold" style={{ fontFamily: "Inter", color: COLORS.magenta }}>Voir toutes les marques →</span>
               </button>
@@ -899,71 +987,135 @@ function Header({ route, go, cartCount, setCategoryFilter, setSelectedBrandId, o
         </div>
       </div>
 
+      {/* Menu mobile — navigation plein écran, hiérarchique : catégorie → marques → catalogue filtré */}
       {open && (
-        <div className="lg:hidden border-t" style={{ borderColor: COLORS.line, background: COLORS.bg }}>
-          <div className="flex flex-col px-5 py-3">
-            {NAV.map((item) => (
-              <div key={item.route} className="border-b" style={{ borderColor: COLORS.line }}>
-                <div className="flex items-center justify-between">
+        <div
+          className="lg:hidden fixed inset-0 z-50 flex flex-col"
+          style={{ background: COLORS.bg }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menu de navigation"
+        >
+          <div className="flex items-center justify-between px-5 h-16 border-b shrink-0" style={{ borderColor: COLORS.line }}>
+            {mobileLevel ? (
+              <button
+                onClick={() => setMobileLevel(null)}
+                className="flex items-center gap-2.5 text-xs uppercase tracking-widest"
+                style={{ fontFamily: "Inter", color: COLORS.inkDim }}
+                aria-label="Retour au menu précédent"
+              >
+                <span
+                  className="flex items-center justify-center rounded-full border"
+                  style={{ width: 30, height: 30, borderColor: COLORS.line, color: COLORS.ink }}
+                >
+                  ←
+                </span>
+                Retour
+              </button>
+            ) : (
+              <span style={{ fontFamily: "Anton", fontSize: 18, letterSpacing: 1, color: COLORS.ink }}>MENU</span>
+            )}
+            <button
+              onClick={closeMobileMenu}
+              className="flex items-center justify-center rounded-full border"
+              style={{ width: 36, height: 36, borderColor: COLORS.line, color: COLORS.ink }}
+              aria-label="Fermer le menu"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto overscroll-contain">
+            {mobileLevel === null ? (
+              <div key="menu-root" className="mobile-menu-panel px-5 py-6 flex flex-col gap-2">
+                <button
+                  onClick={() => { go("home"); closeMobileMenu(); }}
+                  className="text-left rounded-2xl border px-5 py-4"
+                  style={{ borderColor: COLORS.line, fontFamily: "Anton", fontSize: 20, letterSpacing: 0.5, color: route === "home" ? COLORS.magenta : COLORS.ink }}
+                >
+                  Accueil
+                </button>
+
+                <div className="mt-4 mb-1 px-1 text-[11px] uppercase tracking-widest" style={{ color: COLORS.goldDim, fontFamily: "Inter" }}>Catalogue</div>
+                {CATS.map((c) => (
                   <button
-                    onClick={() => { go(item.route); setOpen(false); }}
-                    className="flex-1 text-left py-3 text-sm uppercase tracking-widest"
-                    style={{ fontFamily: "Inter", color: route === item.route ? COLORS.magenta : COLORS.ink }}
+                    key={c.id}
+                    onClick={() => setMobileLevel({ id: c.id, name: c.name })}
+                    className="mobile-cat-card text-left rounded-2xl border px-5 py-4 flex items-center justify-between"
+                    style={{ borderColor: COLORS.line }}
                   >
-                    {item.label}
-                  </button>
-                  {item.dropdown && (
-                    <button
-                      onClick={() => setMobileExpanded((m) => (m === item.dropdown ? null : item.dropdown))}
-                      className="p-3"
-                      aria-label="Ouvrir le sous-menu"
+                    <div>
+                      <div className="text-[10px] tracking-widest" style={{ fontFamily: "IBM Plex Mono", color: COLORS.goldDim }}>{c.tag}</div>
+                      <div style={{ fontFamily: "Anton", fontSize: 19, letterSpacing: 0.5, color: COLORS.ink }}>{c.name}</div>
+                    </div>
+                    <span
+                      className="flex items-center justify-center rounded-full border shrink-0"
+                      style={{ width: 34, height: 34, borderColor: COLORS.line, color: COLORS.magenta }}
                     >
-                      <svg
-                        width="11" height="11" viewBox="0 0 9 9" fill="none"
-                        style={{ transition: "transform .2s ease", transform: mobileExpanded === item.dropdown ? "rotate(180deg)" : "rotate(0deg)" }}
+                      →
+                    </span>
+                  </button>
+                ))}
+
+                <div className="mt-4 mb-1 px-1 text-[11px] uppercase tracking-widest" style={{ color: COLORS.goldDim, fontFamily: "Inter" }}>Explorer</div>
+                {[
+                  ["catalog-new", "Nouveautés"],
+                  ["collections", "Collections"],
+                  ["brands", "Marques"],
+                  ["contact", "Contact"],
+                ].map(([r, label]) => (
+                  <button
+                    key={r}
+                    onClick={() => { go(r); closeMobileMenu(); }}
+                    className="text-left rounded-2xl border px-5 py-4"
+                    style={{ borderColor: COLORS.line, fontFamily: "Inter", fontSize: 14, textTransform: "uppercase", letterSpacing: 1, color: route === r ? COLORS.magenta : COLORS.ink }}
+                  >
+                    {label}
+                  </button>
+                ))}
+
+                <button
+                  onClick={() => { go("admin"); closeMobileMenu(); }}
+                  className="text-left px-5 py-4 mt-2 text-xs uppercase tracking-widest"
+                  style={{ fontFamily: "Inter", color: COLORS.inkDim }}
+                >
+                  Admin
+                </button>
+              </div>
+            ) : (
+              <div key={"menu-cat-" + mobileLevel.id} className="mobile-menu-panel px-5 py-6">
+                <h2 className="mb-1" style={{ fontFamily: "Anton", fontSize: 28, letterSpacing: 0.5, color: COLORS.ink }}>{mobileLevel.name.toUpperCase()}</h2>
+                <p className="mb-6 text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Choisissez une marque</p>
+                <div className="flex flex-col gap-2">
+                  {brandsInCategory(mobileLevel.id).map((b) => (
+                    <button
+                      key={b.id}
+                      onClick={() => goCategoryBrand(mobileLevel.id, b.id)}
+                      className="mobile-brand-card text-left rounded-2xl border px-5 py-4 flex items-center justify-between"
+                      style={{ borderColor: COLORS.line }}
+                    >
+                      <span style={{ fontFamily: "Anton", fontSize: 18, letterSpacing: 0.5, color: COLORS.ink }}>{b.name.toUpperCase()}</span>
+                      <span
+                        className="flex items-center justify-center rounded-full border shrink-0"
+                        style={{ width: 34, height: 34, borderColor: COLORS.line, color: COLORS.magenta }}
                       >
-                        <path d="M1 2.5L4.5 6L8 2.5" stroke={COLORS.inkDim} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
+                        →
+                      </span>
                     </button>
+                  ))}
+                  {brandsInCategory(mobileLevel.id).length === 0 && (
+                    <p className="text-sm px-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucune marque disponible pour le moment dans cette catégorie.</p>
                   )}
                 </div>
-                {item.dropdown === "categories" && mobileExpanded === "categories" && (
-                  <div className="pb-3 pl-3 flex flex-col gap-2.5">
-                    {CATEGORIES.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => { goCategory(c.id); setOpen(false); }}
-                        className="text-left text-xs uppercase tracking-wide"
-                        style={{ fontFamily: "Inter", color: COLORS.inkDim }}
-                      >
-                        {c.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {item.dropdown === "brands" && mobileExpanded === "brands" && (
-                  <div className="pb-3 pl-3 flex flex-col gap-2.5">
-                    {BRANDS.map((b) => (
-                      <button
-                        key={b.id}
-                        onClick={() => { goBrand(b.id); setOpen(false); }}
-                        className="text-left text-xs uppercase tracking-wide"
-                        style={{ fontFamily: "Inter", color: COLORS.inkDim }}
-                      >
-                        {b.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <button
+                  onClick={() => goCategory(mobileLevel.id)}
+                  className="mt-6 text-xs uppercase tracking-widest underline"
+                  style={{ color: COLORS.magenta, fontFamily: "Inter" }}
+                >
+                  Voir tout : {mobileLevel.name} →
+                </button>
               </div>
-            ))}
-            <button
-              onClick={() => { go("admin"); setOpen(false); }}
-              className="text-left py-3 text-sm uppercase tracking-widest"
-              style={{ fontFamily: "Inter", color: COLORS.inkDim }}
-            >
-              Admin
-            </button>
+            )}
           </div>
         </div>
       )}
@@ -1483,10 +1635,10 @@ function ProductCard({ product, brand, onOpen }) {
 
 /* ---------------- Catalog ---------------- */
 
-function Catalog({ products, brands, initialCategory, forceNew, onOpen, go }) {
+function Catalog({ products, brands, initialCategory, initialBrand, forceNew, onOpen, go }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(initialCategory || "all");
-  const [brand, setBrand] = useState("all");
+  const [brand, setBrand] = useState(initialBrand || "all");
   const [size, setSize] = useState("all");
   const [color, setColor] = useState("all");
   const [onlyNew, setOnlyNew] = useState(!!forceNew);
@@ -1495,6 +1647,7 @@ function Catalog({ products, brands, initialCategory, forceNew, onOpen, go }) {
   const [mobileFilters, setMobileFilters] = useState(false);
 
   useEffect(() => { setCategory(initialCategory || "all"); }, [initialCategory]);
+  useEffect(() => { setBrand(initialBrand || "all"); }, [initialBrand]);
   useEffect(() => { setOnlyNew(!!forceNew); }, [forceNew]);
 
   const allSizes = useMemo(() => Array.from(new Set(products.flatMap((p) => p.sizes))).sort(), [products]);
@@ -3886,6 +4039,7 @@ function App() {
   const [videoTestimonials, setVideoTestimonials] = useState(DEMO_VIDEO_TESTIMONIALS);
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [brandFilter, setBrandFilter] = useState("all");
   const [selectedBrandId, setSelectedBrandId] = useState(null);
 
   /* ----- Panier WhatsApp — minimal, persistant en localStorage ----- */
@@ -4200,6 +4354,23 @@ function App() {
           animation-play-state: paused;
         }
 
+        /* ---- Menu mobile plein écran : transition d'entrée entre niveaux ---- */
+        @keyframes menuPanelIn {
+          from { opacity: 0; transform: translateX(14px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        .mobile-menu-panel { animation: menuPanelIn .22s cubic-bezier(0.16,1,0.3,1); }
+        .mobile-cat-card, .mobile-brand-card {
+          transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
+        }
+        .mobile-cat-card:active, .mobile-brand-card:active {
+          transform: scale(0.98);
+        }
+        .mobile-cat-card:hover, .mobile-brand-card:hover {
+          border-color: ${COLORS.purpleDim};
+          background: ${COLORS.surface};
+        }
+
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {
             animation-duration: 0.001ms !important;
@@ -4210,7 +4381,18 @@ function App() {
         }
       `}</style>
 
-      <Header route={route} go={go} setCategoryFilter={setCategoryFilter} setSelectedBrandId={setSelectedBrandId} cartCount={cartCount} onOpenCart={() => setCartOpen(true)} />
+      <Header
+        route={route}
+        go={go}
+        categories={categories}
+        brands={brands}
+        products={products}
+        setCategoryFilter={setCategoryFilter}
+        setBrandFilter={setBrandFilter}
+        setSelectedBrandId={setSelectedBrandId}
+        cartCount={cartCount}
+        onOpenCart={() => setCartOpen(true)}
+      />
 
       {route === "home" && (
         <>
@@ -4254,10 +4436,10 @@ function App() {
       )}
 
       {route === "catalog" && (
-        <Catalog products={products} brands={brands} initialCategory={categoryFilter} forceNew={false} onOpen={openProduct} go={go} />
+        <Catalog products={products} brands={brands} initialCategory={categoryFilter} initialBrand={brandFilter} forceNew={false} onOpen={openProduct} go={go} />
       )}
       {route === "catalog-new" && (
-        <Catalog products={products} brands={brands} initialCategory="all" forceNew={true} onOpen={openProduct} go={go} />
+        <Catalog products={products} brands={brands} initialCategory="all" initialBrand="all" forceNew={true} onOpen={openProduct} go={go} />
       )}
 
       {route === "product" && selectedProduct && (
