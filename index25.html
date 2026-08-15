@@ -1,0 +1,2985 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Luxury Streetwear</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Conversion HEIC/HEIF (photos iPhone) -> JPEG cote navigateur avant upload -->
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+<!-- SDK Supabase (Auth + session) - necessaire pour /admin/login -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-type="module">
+const { useState, useMemo, useRef, useEffect } = React;
+
+
+/* ============================================================
+   LUXURY STREETWEAR — plateforme catalogue premium
+   Palette : noir profond #08060D / violet électrique / magenta néon /
+             vert fluo / bleu électrique / touches dorées
+   Display : "Anton" (titres XXL, avec effet néon en dégradé) — Body : "Inter"
+   Mono : "IBM Plex Mono" (référence produit)
+   ============================================================ */
+
+const FONT_IMPORT = `
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap');
+`;
+
+const COLORS = {
+  bg: "#08060D",
+  surface: "#120E1C",
+  surface2: "#1B1428",
+  line: "#33264A",
+  ink: "#F5F3FF",
+  inkDim: "#B6AFC9",
+  gold: "#E8C25E",
+  goldDim: "#B99A3F",
+  purple: "#8B2FE8",
+  purpleDim: "#5C1FA0",
+  magenta: "#FF2EC4",
+  green: "#39FF8C",
+  blue: "#2E8CFF",
+};
+
+/* ---------------- Demo data (fictitious brands, placeholder imagery) ---------------- */
+
+const CATEGORIES = [
+  { id: "chaussures", name: "Chaussures", tag: "01", desc: "Sneakers & silhouettes signature" },
+  { id: "vetements", name: "Vêtements", tag: "02", desc: "Prêt-à-porter urbain premium" },
+  { id: "sacs", name: "Sacs", tag: "03", desc: "Maroquinerie & pièces du quotidien" },
+  { id: "accessoires", name: "Accessoires", tag: "04", desc: "Détails qui font la différence" },
+  { id: "casquettes", name: "Casquettes", tag: "05", desc: "Headwear signature" },
+  { id: "montres", name: "Montres", tag: "06", desc: "Horlogerie contemporaine" },
+];
+
+const BRANDS = [
+  { id: "novare-originals", name: "Novare Originals", description: "La ligne cœur de Luxury Streetwear — silhouettes signature et pièces intemporelles." },
+  { id: "atelier-noir", name: "Atelier Noir", description: "Façon artisanale, teintes profondes, coupes précises." },
+  { id: "urban-forge", name: "Urban Forge", description: "Streetwear technique pensé pour la ville." },
+  { id: "blackout-lab", name: "Blackout Lab", description: "Recherche matière et éditions limitées." },
+  { id: "gilt-co", name: "Gilt & Co", description: "Horlogerie et bijouterie contemporaine." },
+  { id: "velour-house", name: "Velour House", description: "Maroquinerie douce, finitions haut de gamme." },
+];
+
+const COLOR_SWATCHES = {
+  "Noir": "#111113",
+  "Blanc": "#F7F6F3",
+  "Blanc Cassé": "#EDE9DF",
+  "Gris": "#8A8A90",
+  "Gris Ardoise": "#5C5C63",
+  "Gris Clair": "#C3C2C7",
+  "Gris Foncé": "#3A3A40",
+  "Anthracite": "#2B2B31",
+  "Beige": "#D8C9AE",
+  "Crème": "#EFE6D2",
+  "Sable": "#D9C298",
+  "Camel": "#B98246",
+  "Marron": "#5C3A22",
+  "Chocolat": "#3E2517",
+  "Taupe": "#8A7968",
+  "Kaki": "#5A5842",
+  "Vert": "#2E6B45",
+  "Vert Olive": "#5C6B32",
+  "Vert Forêt": "#1E3C2A",
+  "Vert Pastel": "#A8CBA6",
+  "Bleu": "#2E5CFF",
+  "Bleu Marine": "#0F2350",
+  "Bleu Ciel": "#8FC7EE",
+  "Bleu Électrique": "#2E8CFF",
+  "Bleu Nuit": "#0A1530",
+  "Rouge": "#C4212C",
+  "Bordeaux": "#5C2430",
+  "Orange": "#E0692E",
+  "Jaune": "#E8C23A",
+  "Jaune Pastel": "#F0E1A0",
+  "Rose": "#E893B4",
+  "Rose Poudré": "#E9C7CE",
+  "Fuchsia": "#E0299A",
+  "Violet": "#7C3FC4",
+  "Lavande": "#C6B6EA",
+  "Argent": "#C7CAD1",
+  "Doré": "#D4AF37",
+  "Champagne": "#C9A961",
+  "Cuivre": "#B36A3E",
+  "Rose Gold": "#E7B7A6",
+};
+
+/* Tailles / pointures selon la catégorie du produit */
+const SIZE_OPTIONS_BY_CATEGORY = {
+  chaussures: Array.from({ length: 48 - 35 + 1 }, (_, i) => String(35 + i)),
+  vetements: ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"],
+  casquettes: ["Unique", "S/M", "L/XL"],
+  accessoires: ["Unique", "S", "M", "L"],
+};
+function sizeOptionsForCategory(categoryId) {
+  return SIZE_OPTIONS_BY_CATEGORY[categoryId] || ["Unique", "XS", "S", "M", "L", "XL"];
+}
+
+const img = (seed, w = 900, h = 1100) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
+
+const BROKEN_IMAGE_FALLBACK =
+  "data:image/svg+xml;charset=UTF-8," +
+  encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='500'>
+       <rect width='100%' height='100%' fill='${COLORS.surface2}'/>
+       <text x='50%' y='48%' fill='${COLORS.inkDim}' font-family='sans-serif' font-size='16' text-anchor='middle'>Image indisponible</text>
+       <text x='50%' y='58%' fill='${COLORS.goldDim}' font-family='sans-serif' font-size='12' text-anchor='middle'>URL invalide ou bloquée</text>
+     </svg>`
+  );
+
+function handleImgError(e) {
+  e.currentTarget.onerror = null;
+  e.currentTarget.src = BROKEN_IMAGE_FALLBACK;
+}
+
+/* ============================================================
+   SUPABASE STORAGE — intégration active
+   ------------------------------------------------------------
+   Upload / suppression réels dans le bucket "product-images" du
+   projet Supabase, via l'API REST Storage (fetch), sans dépendre
+   du SDK @supabase/supabase-js (non disponible dans cet environnement
+   d'artifact).
+
+   Clé utilisée : clé "publishable" (publique), prévue pour être
+   exposée côté navigateur. Pour que l'upload et la suppression
+   fonctionnent réellement, le bucket "product-images" doit être
+   configuré côté Supabase avec des policies RLS autorisant
+   l'INSERT/DELETE pour le rôle utilisé ici (anon ou authenticated
+   selon votre configuration d'accès à l'admin).
+
+   L'écriture dans la table "product_images" (product_id, image_url,
+   sort_order, is_primary) reste à faire au moment où le produit est
+   enregistré (saveProduct), à partir du tableau editing.images —
+   voir le commentaire TODO SUPABASE à cet endroit plus bas.
+   ============================================================ */
+
+const SUPABASE_URL = "https://gdyavvhquzgvmsckszmi.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_E_69V4DOdDaDSw9Lf9xJ4A_Jhbo0xJX";
+const SUPABASE_BUCKET = "product-images";
+
+// ============================================================
+// ADMIN_USER_ID — UUID Supabase Auth du SEUL compte autorisé à
+// utiliser le dashboard admin et à uploader/supprimer des photos.
+// Récupérez-le dans Supabase → Authentication → Users (colonne "UID"),
+// après avoir créé votre utilisateur admin (voir instructions en fin
+// de réponse), puis collez-le ici tel quel.
+// ============================================================
+const ADMIN_USER_ID = "2c315c76-b4f2-4ce9-9ee2-91c8f4896dd0";
+
+let supabaseSdkLoadingPromise = null;
+function loadSupabaseSdk() {
+  if (typeof window !== "undefined" && window.supabase && typeof window.supabase.createClient === "function") {
+    return Promise.resolve();
+  }
+  if (supabaseSdkLoadingPromise) return supabaseSdkLoadingPromise;
+  supabaseSdkLoadingPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Impossible de charger le SDK Supabase (Auth indisponible)"));
+    document.head.appendChild(script);
+  });
+  return supabaseSdkLoadingPromise;
+}
+
+let supabaseAuthClient = null;
+async function getSupabaseAuthClient() {
+  if (supabaseAuthClient) return supabaseAuthClient;
+  await loadSupabaseSdk();
+  supabaseAuthClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
+  return supabaseAuthClient;
+}
+
+async function requireAdmin() {
+  const client = await getSupabaseAuthClient();
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError || !userData || !userData.user) {
+    throw new Error("Vous devez être connecté en tant qu'administrateur.");
+  }
+  if (userData.user.id !== ADMIN_USER_ID) {
+    throw new Error("Accès refusé : ce compte n'est pas autorisé comme administrateur.");
+  }
+  const { data: sessionData, error: sessionError } = await client.auth.getSession();
+  if (sessionError || !sessionData || !sessionData.session) {
+    throw new Error("Session expirée, veuillez vous reconnecter.");
+  }
+  return { user: userData.user, accessToken: sessionData.session.access_token };
+}
+
+const ACCEPTED_IMAGE_TYPES = [
+  "image/jpeg", "image/jpg", "image/png", "image/webp",
+  "image/heic", "image/heif",
+];
+const EXT_BY_MIME = {
+  "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp",
+  "image/heic": "heic", "image/heif": "heif",
+};
+
+const FILE_INPUT_ACCEPT =
+  "image/*,image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif";
+
+async function detectRealImageType(file) {
+  try {
+    const buf = await file.slice(0, 12).arrayBuffer();
+    const b = new Uint8Array(buf);
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return "image/webp";
+    const ascii = String.fromCharCode(...b.slice(4, 12));
+    if (ascii.startsWith("ftyp") && /heic|heix|hevc|hevx|mif1|msf1/.test(ascii)) return "image/heic";
+  } catch {
+  }
+  return null;
+}
+
+async function isHeicFile(file) {
+  const type = (file.type || "").toLowerCase();
+  if (type === "image/heic" || type === "image/heif") return true;
+  const name = (file.name || "").toLowerCase();
+  const looksHeicByName = name.endsWith(".heic") || name.endsWith(".heif");
+  const realType = await detectRealImageType(file);
+  if (realType === "image/heic") return true;
+  if (realType) return false;
+  return looksHeicByName;
+}
+
+let heic2anyLoadingPromise = null;
+function loadHeic2any() {
+  if (typeof window !== "undefined" && typeof window.heic2any === "function") {
+    return Promise.resolve();
+  }
+  if (heic2anyLoadingPromise) return heic2anyLoadingPromise;
+  heic2anyLoadingPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Impossible de charger le convertisseur HEIC"));
+    document.head.appendChild(script);
+  });
+  return heic2anyLoadingPromise;
+}
+
+async function convertHeicIfNeeded(file) {
+  const heic = await isHeicFile(file);
+  if (!heic) return file;
+  try {
+    await loadHeic2any();
+  } catch (err) {
+    throw new Error("Conversion HEIC indisponible (échec de chargement)");
+  }
+  if (typeof window.heic2any !== "function") {
+    throw new Error("Conversion HEIC indisponible (librairie non chargée)");
+  }
+  const convertedBlob = await window.heic2any({
+    blob: file,
+    toType: "image/jpeg",
+    quality: 0.9,
+  });
+  const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+  const originalName = (file.name || "photo").replace(/\.(heic|heif)$/i, "");
+  return new File([blob], `${originalName}.jpg`, { type: "image/jpeg" });
+}
+
+const STEP_LABELS = {
+  selection: "Sélection du fichier",
+  conversion: "Conversion",
+  connexion: "Connexion à Supabase",
+  upload: "Upload vers Supabase Storage",
+  url: "URL publique générée",
+};
+
+function makeStoragePath(realType) {
+  const ext = EXT_BY_MIME[realType] || "jpg";
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `admin/${Date.now()}-${rand}.${ext}`;
+}
+
+async function uploadToSupabase(file, accessToken, onStep) {
+  const trace = (step, ok, detail) => onStep && onStep(step, ok, detail);
+  if (!accessToken) {
+    trace("connexion", false, "Vous devez être connecté en tant qu'administrateur.");
+    throw new Error("Vous devez être connecté en tant qu'administrateur.");
+  }
+  trace("selection", true, `${file.name || "(sans nom)"} — type déclaré: "${file.type || "(vide)"}"`);
+  const realType = await detectRealImageType(file);
+  const looksHeicByName = /\.(heic|heif)$/i.test(file.name || "");
+  const effectiveType = realType || (ACCEPTED_IMAGE_TYPES.includes(file.type) ? file.type : null);
+  if (!effectiveType && !looksHeicByName) {
+    trace("conversion", false, "Signature binaire non reconnue comme image (JPEG/PNG/WEBP/HEIC)");
+    throw new Error("Ce fichier ne semble pas être une image supportée");
+  }
+  let usableFile = file;
+  const isHeic = effectiveType === "image/heic" || (!realType && looksHeicByName);
+  if (isHeic) {
+    try {
+      usableFile = await convertHeicIfNeeded(file);
+      trace("conversion", true, `Converti en JPEG (${(usableFile.size / 1024).toFixed(0)} Ko)`);
+    } catch (err) {
+      trace("conversion", false, err.message || String(err));
+      throw err;
+    }
+  } else {
+    usableFile = effectiveType && effectiveType !== file.type
+      ? new File([file], file.name || "photo", { type: effectiveType })
+      : file;
+    trace("conversion", true, "Aucune conversion nécessaire");
+  }
+  const finalType = usableFile.type || effectiveType || "image/jpeg";
+  const path = makeStoragePath(finalType);
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${path}`;
+  let res;
+  try {
+    res = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": finalType,
+        "apikey": SUPABASE_PUBLISHABLE_KEY,
+        "Authorization": `Bearer ${accessToken}`,
+        "x-upsert": "false",
+      },
+      body: usableFile,
+    });
+  } catch (networkErr) {
+    trace("connexion", false, `Requête réseau impossible vers Supabase : ${networkErr.message || networkErr}`);
+    throw new Error(`Connexion à Supabase impossible : ${networkErr.message || networkErr}`);
+  }
+  trace("connexion", true, `Réponse reçue du serveur Supabase (HTTP ${res.status})`);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      detail = body.message || body.error || JSON.stringify(body);
+    } catch {
+      try { detail = await res.text(); } catch {}
+    }
+    trace("upload", false, detail);
+    throw new Error(`Upload Supabase Storage échoué (${res.status}) : ${detail}`);
+  }
+  trace("upload", true, `Fichier stocké sous ${SUPABASE_BUCKET}/${path}`);
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${path}`;
+  trace("url", true, publicUrl);
+  return { publicUrl, path };
+}
+
+function extractSupabasePath(imageUrl) {
+  const marker = `/storage/v1/object/public/${SUPABASE_BUCKET}/`;
+  const idx = imageUrl.indexOf(marker);
+  if (idx === -1) return null;
+  return imageUrl.slice(idx + marker.length);
+}
+
+async function deleteFromSupabase(imageUrl, accessToken) {
+  const path = extractSupabasePath(imageUrl);
+  if (!path) return;
+  if (!accessToken) {
+    console.error("Suppression Supabase Storage refusée : administrateur non authentifié.");
+    return;
+  }
+  const deleteUrl = `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${path}`;
+  const res = await fetch(deleteUrl, {
+    method: "DELETE",
+    headers: {
+      "apikey": SUPABASE_PUBLISHABLE_KEY,
+      "Authorization": `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) {
+    console.error("Suppression Supabase Storage échouée:", res.status, path);
+  }
+}
+
+/* ============================================================
+   SUPABASE — table "products" (persistance réelle des fiches produit)
+   ------------------------------------------------------------
+   Conversion entre le format "row" de la table Supabase (snake_case)
+   et le format "product" utilisé côté React (camelCase), + helper de
+   chargement de la liste complète depuis Supabase.
+   ============================================================ */
+
+function rowToProduct(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    brandId: row.brand_id,
+    categoryId: row.category_id,
+    reference: row.reference,
+    description: row.description || "",
+    images: row.images || [],
+    sizes: row.sizes || [],
+    colors: row.colors || [],
+    featured: !!row.featured,
+    isNew: !!row.is_new,
+    availability: row.availability !== false,
+  };
+}
+
+function productToRow(p) {
+  return {
+    name: p.name,
+    brand_id: p.brandId,
+    category_id: p.categoryId,
+    reference: p.reference,
+    description: p.description || "",
+    images: p.images || [],
+    sizes: p.sizes || [],
+    colors: p.colors || [],
+    featured: !!p.featured,
+    is_new: !!p.isNew,
+    availability: p.availability !== false,
+  };
+}
+
+async function loadProductsFromSupabase() {
+  const client = await getSupabaseAuthClient();
+  const { data, error } = await client
+    .from("products")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(rowToProduct);
+}
+
+/* ============================================================
+   SUPABASE — table "brands" (persistance réelle des marques)
+   ------------------------------------------------------------
+   Même logique que pour les produits : conversion row <-> objet
+   React, + helper de chargement de la liste complète des marques
+   depuis Supabase. La table s'appelle "brands" côté Supabase.
+   ============================================================ */
+
+function rowToBrand(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+  };
+}
+
+function brandToRow(b) {
+  return {
+    name: b.name,
+    description: b.description || "",
+  };
+}
+
+async function loadBrandsFromSupabase() {
+  const client = await getSupabaseAuthClient();
+  const { data, error } = await client
+    .from("brands")
+    .select("*")
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map(rowToBrand);
+}
+
+function makeProduct(id, name, brandId, categoryId, ref, seedBase, opts = {}) {
+  const nPhotos = opts.photos || 4;
+  return {
+    id,
+    name,
+    brandId,
+    categoryId,
+    reference: ref,
+    description:
+      opts.description ||
+      "Pièce signature Luxury Streetwear pensée pour l'usage quotidien : matières sélectionnées, finitions soignées, coupe étudiée pour durer.",
+    images: Array.from({ length: nPhotos }, (_, i) => img(`${seedBase}-${i}`)),
+    sizes: opts.sizes || ["XS", "S", "M", "L", "XL"],
+    colors: opts.colors || ["Noir", "Champagne"],
+    featured: !!opts.featured,
+    isNew: !!opts.isNew,
+    availability: opts.availability ?? true,
+    price: opts.price || null,
+  };
+}
+
+const INITIAL_PRODUCTS = [
+  makeProduct("p1", "Sneaker Silhouette 01", "novare-originals", "chaussures", "NVR-SN-001", "sneak1", { featured: true, isNew: true, sizes: ["39","40","41","42","43","44"], colors: ["Noir","Blanc Cassé"], photos: 5 }),
+  makeProduct("p2", "Sneaker Trail Forge", "urban-forge", "chaussures", "UFG-SN-014", "sneak2", { isNew: true, sizes: ["40","41","42","43","44","45"], colors: ["Kaki","Noir"] }),
+  makeProduct("p3", "Boot Atelier Cuir", "atelier-noir", "chaussures", "ATN-BT-007", "sneak3", { colors: ["Noir","Bordeaux"], sizes: ["40","41","42","43","44"] }),
+  makeProduct("p4", "Doudoune Shine", "novare-originals", "vetements", "NVR-DD-021", "coat1", { featured: true, colors: ["Noir","Champagne"] }),
+  makeProduct("p5", "Ensemble Monogramme Studio", "blackout-lab", "vetements", "BOL-EN-009", "hoodie1", { isNew: true, colors: ["Champagne","Gris Ardoise"] }),
+  makeProduct("p6", "Veste Technique Forge", "urban-forge", "vetements", "UFG-VT-033", "jacket1", { colors: ["Noir","Kaki"] }),
+  makeProduct("p7", "Pull Col Rond Atelier", "atelier-noir", "vetements", "ATN-PL-012", "sweater1", { colors: ["Gris Ardoise","Noir"] }),
+  makeProduct("p8", "Sac Crossbody Signature", "velour-house", "sacs", "VLH-SC-005", "bag1", { featured: true, sizes: [], colors: ["Noir","Bordeaux"], photos: 5 }),
+  makeProduct("p9", "Sac Weekend Forge", "urban-forge", "sacs", "UFG-SC-019", "bag2", { isNew: true, sizes: [], colors: ["Noir","Kaki"] }),
+  makeProduct("p10", "Pochette Studio", "blackout-lab", "sacs", "BOL-SC-041", "bag3", { sizes: [], colors: ["Champagne","Noir"] }),
+  makeProduct("p11", "Ceinture Cuir Grainé", "atelier-noir", "accessoires", "ATN-CE-002", "acc1", { sizes: ["S","M","L"], colors: ["Noir","Bordeaux"] }),
+  makeProduct("p12", "Foulard Monogramme", "novare-originals", "accessoires", "NVR-FL-010", "acc2", { sizes: [], colors: ["Champagne","Gris Ardoise"], isNew: true }),
+  makeProduct("p13", "Casquette Icône Gold", "novare-originals", "casquettes", "NVR-CQ-006", "cap1", { featured: true, sizes: ["Unique"], colors: ["Noir","Champagne"] }),
+  makeProduct("p14", "Casquette Forge Tech", "urban-forge", "casquettes", "UFG-CQ-023", "cap2", { sizes: ["Unique"], colors: ["Kaki","Noir"] }),
+  makeProduct("p15", "Montre Automatique Royale", "gilt-co", "montres", "GLC-MT-101", "watch1", { featured: true, sizes: [], colors: ["Noir","Champagne"], photos: 5 }),
+  makeProduct("p16", "Montre Chrono All-Black", "gilt-co", "montres", "GLC-MT-118", "watch2", { isNew: true, sizes: [], colors: ["Noir"] }),
+  makeProduct("p17", "Sneaker Studio Low", "blackout-lab", "chaussures", "BOL-SN-027", "sneak4", { sizes: ["38","39","40","41","42"], colors: ["Blanc Cassé","Champagne"] }),
+  makeProduct("p18", "Sac Banane Signature", "novare-originals", "sacs", "NVR-SC-030", "bag4", { sizes: [], colors: ["Noir","Champagne"] }),
+];
+
+/* ---------------- small UI atoms ---------------- */
+
+function Eyebrow({ children }) {
+  return (
+    <div
+      className="inline-flex items-center gap-2 text-xs tracking-widest uppercase font-medium"
+      style={{ color: COLORS.magenta, fontFamily: "Inter" }}
+    >
+      <span style={{ width: 18, height: 2, background: `linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta})`, display: "inline-block", boxShadow: `0 0 6px ${COLORS.magenta}` }} />
+      {children}
+    </div>
+  );
+}
+
+function TagCorner() {
+  // signature diagonal corner — désormais un dégradé néon violet/magenta
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: "absolute",
+        top: 0,
+        right: 0,
+        width: 46,
+        height: 46,
+        background: `linear-gradient(135deg, ${COLORS.purple}, ${COLORS.magenta})`,
+        clipPath: "polygon(100% 0, 0 0, 100% 100%)",
+        filter: "drop-shadow(0 0 10px rgba(255,46,196,0.55))",
+      }}
+    />
+  );
+}
+
+/* ---------------- Scroll reveal system ----------------
+   Léger, basé sur IntersectionObserver, respecte prefers-reduced-motion,
+   utilise uniquement transform + opacity (perf). Utilisable partout :
+   <Reveal><Section /></Reveal> ou <Reveal delay={80}><Card /></Reveal>
+------------------------------------------------------------- */
+const prefersReducedMotion =
+  typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+
+function Reveal({ children, delay = 0, y = 18, blur = true, className = "", as = "div", once = true }) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(prefersReducedMotion);
+
+  useEffect(() => {
+    if (prefersReducedMotion) return;
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setVisible(true);
+            if (once) io.unobserve(entry.target);
+          } else if (!once) {
+            setVisible(false);
+          }
+        });
+      },
+      { threshold: 0.14, rootMargin: "0px 0px -8% 0px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [once]);
+
+  const Tag = as;
+  return (
+    <Tag
+      ref={ref}
+      className={className}
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0) scale(1)" : `translateY(${y}px) scale(0.99)`,
+        filter: !prefersReducedMotion && blur ? (visible ? "blur(0px)" : "blur(4px)") : "none",
+        transition: prefersReducedMotion
+          ? "none"
+          : `opacity 0.6s cubic-bezier(0.16,1,0.3,1) ${delay}ms, transform 0.6s cubic-bezier(0.16,1,0.3,1) ${delay}ms, filter 0.5s ease ${delay}ms`,
+        willChange: "opacity, transform",
+      }}
+    >
+      {children}
+    </Tag>
+  );
+}
+
+/* Grille avec stagger automatique : chaque enfant direct reçoit un délai croissant */
+function RevealGroup({ children, step = 70, y = 16, className = "" }) {
+  const items = React.Children.toArray(children);
+  return (
+    <div className={className}>
+      {items.map((child, i) => (
+        <Reveal key={child.key ?? i} delay={i * step} y={y}>
+          {child}
+        </Reveal>
+      ))}
+    </div>
+  );
+}
+
+function Badge({ children, tone = "gold" }) {
+  const TONES = {
+    gold: { bg: COLORS.gold, color: "#08060D" },
+    dark: { bg: COLORS.surface2, color: COLORS.ink },
+    new: { bg: COLORS.green, color: "#08060D" },
+    promo: { bg: COLORS.magenta, color: "#08060D" },
+  };
+  const { bg, color } = TONES[tone] || TONES.gold;
+  return (
+    <span
+      className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm"
+      style={{ background: bg, color, fontFamily: "Inter", boxShadow: `0 0 10px ${bg}99` }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function GhostButton({ children, onClick, className = "" }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-6 py-3 text-sm uppercase tracking-widest font-semibold border rounded-sm transition-all duration-200 ${className}`}
+      style={{ borderColor: COLORS.purple, color: COLORS.ink, fontFamily: "Inter" }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = `linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta})`;
+        e.currentTarget.style.color = "#08060D";
+        e.currentTarget.style.boxShadow = `0 0 18px rgba(255,46,196,0.55)`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+        e.currentTarget.style.color = COLORS.ink;
+        e.currentTarget.style.boxShadow = "none";
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SolidButton({ children, onClick, className = "" }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-6 py-3 text-sm uppercase tracking-widest font-semibold rounded-sm transition-transform active:scale-95 ${className}`}
+      style={{
+        background: `linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta})`,
+        color: "#08060D",
+        fontFamily: "Inter",
+        boxShadow: `0 0 16px rgba(255,46,196,0.5)`,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ---------------- Fond global — univers galaxie / futuriste ----------------
+   Couche fixe, décorative, placée derrière tout le contenu (z-index 0).
+   Purement CSS (gradients + pseudo-particules), aucune vidéo/image lourde.
+   Respecte prefers-reduced-motion via la règle globale définie plus bas. */
+
+function GalaxyBackground() {
+  return (
+    <div aria-hidden="true" className="lxs-galaxy">
+      {/* Base spatiale : noir profond -> bleu nuit */}
+      <div className="lxs-galaxy-base" />
+
+      {/* Nébuleuses très discrètes */}
+      <div className="lxs-halo lxs-halo-violet" style={{ top: "-10%", left: "-8%" }} />
+      <div className="lxs-halo lxs-halo-blue" style={{ top: "18%", right: "-12%" }} />
+      <div className="lxs-halo lxs-halo-magenta" style={{ bottom: "8%", left: "8%" }} />
+      <div className="lxs-halo lxs-halo-green" style={{ bottom: "-14%", right: "10%" }} />
+
+      {/* Étoiles fines, deux profondeurs pour un léger parallax */}
+      <div className="lxs-stars lxs-stars-far" />
+      <div className="lxs-stars lxs-stars-near" />
+    </div>
+  );
+}
+
+/* ---------------- Header ---------------- */
+
+function Header({ route, go, cartCount }) {
+  const [open, setOpen] = useState(false);
+  const links = [
+    ["home", "Accueil"],
+    ["catalog", "Catalogue"],
+    ["collections", "Collections"],
+    ["catalog-new", "Nouveautés"],
+    ["brands", "Marques"],
+    ["about", "À propos"],
+    ["contact", "Contact"],
+  ];
+  return (
+    <header
+      className="sticky top-0 z-40 border-b"
+      style={{ background: "rgba(8,6,13,0.92)", backdropFilter: "blur(10px)", borderColor: COLORS.line }}
+    >
+      <div className="max-w-7xl mx-auto flex items-center justify-between px-5 md:px-8 h-16">
+        <button onClick={() => go("home")} className="flex flex-col items-start leading-none">
+          <span style={{ fontFamily: "Anton", fontSize: 20, letterSpacing: 1, color: COLORS.ink }}>LUXURY</span>
+          <span className="neon-text" style={{ fontFamily: "Anton", fontSize: 20, letterSpacing: 1, marginTop: -4 }}>STREETWEAR</span>
+        </button>
+
+        <nav className="hidden lg:flex items-center gap-7">
+          {links.map(([r, label]) => (
+            <button
+              key={r}
+              onClick={() => go(r)}
+              className="text-xs uppercase tracking-widest font-medium"
+              style={{
+                fontFamily: "Inter",
+                color: route === r || (r === "catalog" && route === "product") ? COLORS.magenta : COLORS.inkDim,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-4">
+          <button onClick={() => go("admin")} className="hidden md:inline text-[11px] uppercase tracking-widest" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+            Admin
+          </button>
+          <button
+            className="lg:hidden flex flex-col gap-1.5 p-2"
+            onClick={() => setOpen((o) => !o)}
+            aria-label="Menu"
+          >
+            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block" }} />
+            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block" }} />
+            <span style={{ width: 14, height: 2, background: COLORS.magenta, display: "block" }} />
+          </button>
+        </div>
+      </div>
+
+      {open && (
+        <div className="lg:hidden border-t" style={{ borderColor: COLORS.line, background: COLORS.bg }}>
+          <div className="flex flex-col px-5 py-3">
+            {links.map(([r, label]) => (
+              <button
+                key={r}
+                onClick={() => { go(r); setOpen(false); }}
+                className="text-left py-3 text-sm uppercase tracking-widest border-b"
+                style={{ fontFamily: "Inter", color: route === r ? COLORS.magenta : COLORS.ink, borderColor: COLORS.line }}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              onClick={() => { go("admin"); setOpen(false); }}
+              className="text-left py-3 text-sm uppercase tracking-widest"
+              style={{ fontFamily: "Inter", color: COLORS.inkDim }}
+            >
+              Admin
+            </button>
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}
+
+/* ---------------- Hero ---------------- */
+
+function Hero({ go }) {
+  const wrapRef = useRef(null);
+  const [parallax, setParallax] = useState(0);
+
+  useEffect(() => {
+    if (prefersReducedMotion) return;
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        const el = wrapRef.current;
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          setParallax(Math.max(-40, Math.min(40, rect.top * -0.06)));
+        }
+        raf = null;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  return (
+    <section
+      ref={wrapRef}
+      className="relative overflow-hidden"
+      style={{
+        background: `linear-gradient(160deg, ${COLORS.bg} 0%, #150F22 55%, ${COLORS.bg} 100%)`,
+      }}
+    >
+      <div
+        aria-hidden
+        className="absolute inset-0 opacity-70"
+        style={{
+          background: `
+            radial-gradient(circle at 85% 15%, rgba(255,46,196,0.28), transparent 45%),
+            radial-gradient(circle at 10% 85%, rgba(139,47,232,0.28), transparent 45%),
+            radial-gradient(circle at 50% 50%, rgba(46,140,255,0.10), transparent 60%)
+          `,
+        }}
+      />
+
+      {/* Nébuleuse additionnelle + étoiles fines, propres au Hero (plus spectaculaire) */}
+      <div
+        aria-hidden
+        className="absolute inset-0"
+        style={{
+          background: `
+            radial-gradient(1px 1px at 12% 22%, rgba(255,255,255,0.7), transparent 60%),
+            radial-gradient(1px 1px at 38% 8%, rgba(255,255,255,0.55), transparent 60%),
+            radial-gradient(1px 1px at 66% 30%, rgba(255,255,255,0.6), transparent 60%),
+            radial-gradient(1px 1px at 90% 12%, rgba(255,255,255,0.5), transparent 60%),
+            radial-gradient(1px 1px at 22% 70%, rgba(255,255,255,0.55), transparent 60%),
+            radial-gradient(1px 1px at 78% 78%, rgba(255,255,255,0.5), transparent 60%)
+          `,
+          backgroundSize: "260px 260px",
+          opacity: 0.5,
+        }}
+      />
+
+      <div className="max-w-[1600px] mx-auto px-5 md:px-10 pt-12 pb-14 md:pt-20 md:pb-20 relative grid md:grid-cols-[0.95fr_1.15fr] gap-10 md:gap-6 items-center">
+        {/* Texte */}
+        <div className="relative z-10">
+          <Reveal><Eyebrow>Collection permanente</Eyebrow></Reveal>
+
+          <Reveal delay={90}>
+            <h1
+              className="mt-5 leading-[0.92]"
+              style={{
+                fontFamily: "Anton",
+                fontSize: "clamp(52px, 10vw, 128px)",
+                color: COLORS.ink,
+                letterSpacing: 0.5,
+              }}
+            >
+              LUXURY
+              <br />
+              <span className="neon-text">STREETWEAR</span>
+            </h1>
+          </Reveal>
+
+          <Reveal delay={180}>
+            <p
+              className="mt-6 text-base md:text-lg max-w-md"
+              style={{
+                fontFamily: "Inter",
+                color: COLORS.inkDim,
+              }}
+            >
+              Une autre vision du style. Streetwear premium, matières
+              sélectionnées, silhouettes conçues pour durer.
+            </p>
+          </Reveal>
+
+          <Reveal delay={270}>
+            <div className="mt-9 flex flex-wrap gap-4">
+              <SolidButton onClick={() => go("catalog")}>
+                Découvrir le catalogue
+              </SolidButton>
+
+              <GhostButton onClick={() => go("catalog-new")}>
+                Voir les nouveautés
+              </GhostButton>
+            </div>
+          </Reveal>
+        </div>
+
+        {/* Visuels — grands, dominants, légère composition en profondeur */}
+        <div className="relative h-[440px] sm:h-[520px] md:h-[600px] lg:h-[660px]">
+          {/* Lumière diffuse derrière les images, jamais devant */}
+          <div
+            aria-hidden
+            className="absolute -inset-10 -z-10"
+            style={{
+              background: `radial-gradient(60% 55% at 50% 45%, rgba(139,47,232,0.30), transparent 70%)`,
+              filter: "blur(50px)",
+            }}
+          />
+          <div className="absolute inset-0 grid grid-cols-[1.1fr_0.9fr] gap-3 md:gap-5">
+            {/* Image gauche — dominante */}
+            <Reveal delay={120} y={26} className="relative h-full">
+              <div
+                className="relative rounded-md overflow-hidden h-full neon-border"
+                style={{ transform: `translateY(${parallax * 0.6}px)`, transition: prefersReducedMotion ? "none" : "transform 0.1s linear" }}
+              >
+                <img
+                  src="https://cdn.phototourl.com/free/2026-08-14-4bd52cfe-91d1-4dde-b603-78f9e112d690.png"
+                  alt="Collection LXS"
+                  className="w-full h-full object-cover"
+                  onError={handleImgError}
+                  loading="eager"
+                  decoding="async"
+                />
+                <div
+                  className="absolute inset-0"
+                  style={{ background: "linear-gradient(180deg, transparent 55%, rgba(8,6,13,0.75))" }}
+                />
+              </div>
+            </Reveal>
+
+            {/* Image droite — plan resserré, décalée */}
+            <Reveal delay={220} y={26} className="relative h-full pt-10 md:pt-16">
+              <div
+                className="relative rounded-md overflow-hidden h-full neon-border"
+                style={{ transform: `translateY(${parallax * -0.9}px)`, transition: prefersReducedMotion ? "none" : "transform 0.1s linear" }}
+              >
+                <img
+                  src={img("hero-b", 700, 1000)}
+                  alt="Composition produit"
+                  className="w-full h-full object-cover"
+                  onError={handleImgError}
+                  loading="eager"
+                  decoding="async"
+                />
+                <div
+                  className="absolute inset-0"
+                  style={{ background: "linear-gradient(180deg, transparent 55%, rgba(8,6,13,0.75))" }}
+                />
+              </div>
+            </Reveal>
+          </div>
+
+          {/* Badge */}
+          <Reveal delay={340} className="absolute -bottom-4 left-1/2 -translate-x-1/2">
+            <div
+              className="px-5 py-2 text-[11px] uppercase tracking-widest font-semibold rounded-sm whitespace-nowrap"
+              style={{
+                background: `linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta})`,
+                color: "#08060D",
+                fontFamily: "Inter",
+                boxShadow: "0 0 20px rgba(255,46,196,0.5)",
+              }}
+            >
+              Édition permanente — LXS
+            </div>
+          </Reveal>
+        </div>
+      </div>
+
+      {/* Informations */}
+      <div
+        className="border-t"
+        style={{ borderColor: COLORS.line }}
+      >
+        <div className="max-w-[1600px] mx-auto px-5 md:px-10 py-5 grid grid-cols-3 gap-4 text-center">
+          {[
+            ["Livraison", "Partout en France"],
+            ["Remise en main propre", "Paris & Île-de-France"],
+            ["Service client", "7 jours / 7"],
+          ].map(([t, s], i) => (
+            <Reveal key={t} delay={i * 60} y={10}>
+              <div>
+                <div
+                  className="text-[11px] md:text-xs uppercase tracking-widest font-semibold"
+                  style={{
+                    color: COLORS.ink,
+                    fontFamily: "Inter",
+                  }}
+                >
+                  {t}
+                </div>
+
+                <div
+                  className="text-[10px] md:text-xs mt-1"
+                  style={{
+                    color: COLORS.inkDim,
+                    fontFamily: "Inter",
+                  }}
+                >
+                  {s}
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------- Category grid ---------------- */
+
+function CategoryGrid({ go, setCategoryFilter }) {
+  return (
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-16">
+      <Reveal><Eyebrow>Univers</Eyebrow></Reveal>
+      <Reveal delay={70}>
+        <h2 className="mt-3 mb-8" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>
+          CATÉGORIES
+        </h2>
+      </Reveal>
+      <RevealGroup className="grid grid-cols-2 md:grid-cols-3 gap-4" step={60} y={20}>
+        {CATEGORIES.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => { setCategoryFilter(c.id); go("catalog"); }}
+            className="relative group text-left overflow-hidden rounded-md w-full transition-transform duration-300 hover:-translate-y-1"
+            style={{ aspectRatio: "3/4" }}
+          >
+            <img
+              src={
+                c.id === "montres"
+                  ? "https://gdyavvhquzgvmsckszmi.supabase.co/storage/v1/object/public/product-images/IMG_1086.png"
+                  : img("cat-" + c.id, 500, 650)
+              }
+              alt={c.name}
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
+              onError={handleImgError}
+              loading="lazy"
+              decoding="async"
+            />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(8,6,13,0.1) 30%, rgba(8,6,13,0.92))" }} />
+            <div
+              className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+              style={{ boxShadow: `inset 0 0 0 1px ${COLORS.magenta}66, 0 0 24px rgba(255,46,196,0.25)` }}
+            />
+            <TagCorner />
+            <div className="absolute top-3 left-3 text-[11px] font-mono" style={{ color: COLORS.magenta }}>{c.tag}</div>
+            <div className="absolute bottom-0 p-4">
+              <div style={{ fontFamily: "Anton", fontSize: 22, color: COLORS.ink, letterSpacing: 0.5 }}>{c.name.toUpperCase()}</div>
+              <div className="text-[11px] mt-1" style={{ fontFamily: "Inter", color: COLORS.inkDim }}>{c.desc}</div>
+            </div>
+          </button>
+        ))}
+      </RevealGroup>
+    </section>
+  );
+}
+
+/* ---------------- Product card ---------------- */
+
+function ProductCard({ product, brand, onOpen }) {
+  const hasSecondImage = product.images && product.images.length > 1;
+  return (
+    <button onClick={() => onOpen(product.id)} className="relative text-left group w-full">
+      <div
+        className="relative overflow-hidden rounded-md transition-shadow duration-300"
+        style={{
+          background: `radial-gradient(120% 120% at 50% 0%, ${COLORS.surface2} 0%, ${COLORS.surface} 100%)`,
+          aspectRatio: "3/4",
+          boxShadow: `0 0 0 1px ${COLORS.line}`,
+        }}
+      >
+        <img
+          src={product.images[0]}
+          alt={product.name}
+          className="absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-out group-hover:scale-105"
+          style={{ opacity: hasSecondImage ? 1 : undefined }}
+          onError={handleImgError}
+          loading="lazy"
+          decoding="async"
+        />
+        {hasSecondImage && (
+          <img
+            src={product.images[1]}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-out opacity-0 group-hover:opacity-100"
+            onError={handleImgError}
+            loading="lazy"
+            decoding="async"
+          />
+        )}
+        <div
+          className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+          style={{ boxShadow: `inset 0 0 0 1px ${COLORS.magenta}88` }}
+        />
+        <TagCorner />
+        <div className="absolute top-3 left-3 flex gap-2">
+          {product.isNew && <Badge tone="new">Nouveau</Badge>}
+          {product.featured && <Badge tone="dark">En avant</Badge>}
+        </div>
+        {!product.availability && (
+          <div className="absolute inset-x-0 bottom-0 py-1.5 text-center text-[10px] uppercase tracking-widest" style={{ background: "rgba(0,0,0,0.75)", color: COLORS.inkDim, fontFamily: "Inter" }}>
+            Rupture de stock
+          </div>
+        )}
+      </div>
+      <div className="mt-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[10px] uppercase tracking-widest" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>{brand?.name}</div>
+          {product.price != null && (
+            <div className="text-xs font-semibold" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{product.price} €</div>
+          )}
+        </div>
+        <div className="text-sm mt-1" style={{ color: COLORS.ink, fontFamily: "Inter", fontWeight: 600 }}>{product.name}</div>
+        <div className="text-[11px] mt-0.5 font-mono" style={{ color: COLORS.inkDim }}>{product.reference}</div>
+        {product.colors && product.colors.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-2">
+            {product.colors.slice(0, 5).map((c) => (
+              <span
+                key={c}
+                title={c}
+                className="w-3 h-3 rounded-full"
+                style={{ background: COLOR_SWATCHES[c] || "#444", boxShadow: `0 0 0 1px ${COLORS.line}` }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+/* ---------------- Catalog ---------------- */
+
+function Catalog({ products, brands, initialCategory, forceNew, onOpen, go }) {
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState(initialCategory || "all");
+  const [brand, setBrand] = useState("all");
+  const [size, setSize] = useState("all");
+  const [color, setColor] = useState("all");
+  const [onlyNew, setOnlyNew] = useState(!!forceNew);
+  const [onlyFeatured, setOnlyFeatured] = useState(false);
+  const [sort, setSort] = useState("relevance");
+  const [mobileFilters, setMobileFilters] = useState(false);
+
+  useEffect(() => { setCategory(initialCategory || "all"); }, [initialCategory]);
+  useEffect(() => { setOnlyNew(!!forceNew); }, [forceNew]);
+
+  const allSizes = useMemo(() => Array.from(new Set(products.flatMap((p) => p.sizes))).sort(), [products]);
+  const allColors = useMemo(() => Array.from(new Set(products.flatMap((p) => p.colors))), [products]);
+
+  const filtered = useMemo(() => {
+    let list = products.filter((p) => {
+      if (search && !(`${p.name} ${p.reference}`.toLowerCase().includes(search.toLowerCase()))) return false;
+      if (category !== "all" && p.categoryId !== category) return false;
+      if (brand !== "all" && p.brandId !== brand) return false;
+      if (size !== "all" && !p.sizes.includes(size)) return false;
+      if (color !== "all" && !p.colors.includes(color)) return false;
+      if (onlyNew && !p.isNew) return false;
+      if (onlyFeatured && !p.featured) return false;
+      return true;
+    });
+    if (sort === "name") list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === "new") list = [...list].sort((a, b) => Number(b.isNew) - Number(a.isNew));
+    return list;
+  }, [products, search, category, brand, size, color, onlyNew, onlyFeatured, sort]);
+
+  const Filters = () => (
+    <div className="space-y-6">
+      <div>
+        <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Catégorie</label>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle}>
+          <option value="all">Toutes</option>
+          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Marque</label>
+        <select value={brand} onChange={(e) => setBrand(e.target.value)} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle}>
+          <option value="all">Toutes</option>
+          {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Taille</label>
+        <select value={size} onChange={(e) => setSize(e.target.value)} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle}>
+          <option value="all">Toutes</option>
+          {allSizes.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Couleur</label>
+        <select value={color} onChange={(e) => setColor(e.target.value)} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle}>
+          <option value="all">Toutes</option>
+          {allColors.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <label className="flex items-center gap-2 text-sm" style={{ fontFamily: "Inter", color: COLORS.ink }}>
+        <input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} />
+        Nouveautés uniquement
+      </label>
+      <label className="flex items-center gap-2 text-sm" style={{ fontFamily: "Inter", color: COLORS.ink }}>
+        <input type="checkbox" checked={onlyFeatured} onChange={(e) => setOnlyFeatured(e.target.checked)} />
+        Mis en avant uniquement
+      </label>
+      <button
+        onClick={() => { setSearch(""); setCategory("all"); setBrand("all"); setSize("all"); setColor("all"); setOnlyNew(false); setOnlyFeatured(false); }}
+        className="text-xs uppercase tracking-widest underline"
+        style={{ color: COLORS.magenta, fontFamily: "Inter" }}
+      >
+        Réinitialiser les filtres
+      </button>
+    </div>
+  );
+
+  return (
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
+      <Eyebrow>Catalogue</Eyebrow>
+      <div className="flex items-end justify-between flex-wrap gap-4 mt-3 mb-8">
+        <h1 style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>TOUT LE CATALOGUE</h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher un produit, une référence…"
+            className="px-4 py-2.5 text-sm rounded-sm w-64 max-w-full"
+            style={selectStyle}
+          />
+          <select value={sort} onChange={(e) => setSort(e.target.value)} className="px-3 py-2.5 text-sm rounded-sm" style={selectStyle}>
+            <option value="relevance">Pertinence</option>
+            <option value="name">Nom (A–Z)</option>
+            <option value="new">Nouveautés d'abord</option>
+          </select>
+          <button
+            className="lg:hidden px-4 py-2.5 text-xs uppercase tracking-widest border rounded-sm"
+            style={{ borderColor: COLORS.line, color: COLORS.ink, fontFamily: "Inter" }}
+            onClick={() => setMobileFilters(true)}
+          >
+            Filtres
+          </button>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-[220px_1fr] gap-10">
+        <aside className="hidden lg:block">
+          <Filters />
+        </aside>
+
+        <div>
+          <div className="text-xs mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{filtered.length} produit{filtered.length > 1 ? "s" : ""}</div>
+          {filtered.length === 0 ? (
+            <div className="py-24 text-center border rounded-sm" style={{ borderColor: COLORS.line }}>
+              <div style={{ fontFamily: "Anton", fontSize: 24, color: COLORS.ink }}>AUCUN RÉSULTAT</div>
+              <p className="mt-2 text-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Essayez d'élargir vos filtres ou votre recherche.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-5 md:gap-6">
+              {filtered.map((p) => (
+                <ProductCard key={p.id} product={p} brand={brands.find((b) => b.id === p.brandId)} onOpen={onOpen} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {mobileFilters && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setMobileFilters(false)} />
+          <div className="absolute right-0 top-0 bottom-0 w-80 max-w-[85vw] p-6 overflow-y-auto" style={{ background: COLORS.surface }}>
+            <div className="flex items-center justify-between mb-6">
+              <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>FILTRES</div>
+              <button onClick={() => setMobileFilters(false)} style={{ color: COLORS.ink }}>✕</button>
+            </div>
+            <Filters />
+            <SolidButton className="w-full mt-6" onClick={() => setMobileFilters(false)}>Voir les résultats</SolidButton>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const selectStyle = {
+  background: COLORS.surface,
+  border: `1px solid ${COLORS.line}`,
+  color: COLORS.ink,
+  fontFamily: "Inter",
+};
+
+/* ---------------- Product page ---------------- */
+
+function ProductGallery({ product }) {
+  const [activeImg, setActiveImg] = useState(0);
+  const [displayImg, setDisplayImg] = useState(0);
+  const [fading, setFading] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
+  const touchStart = useRef(null);
+  const fadeTimeout = useRef(null);
+
+  useEffect(() => {
+    setActiveImg(0);
+    setDisplayImg(0);
+  }, [product.id]);
+
+  useEffect(() => {
+    if (displayImg === activeImg) return;
+    setFading(true);
+    fadeTimeout.current && clearTimeout(fadeTimeout.current);
+    fadeTimeout.current = setTimeout(() => {
+      setDisplayImg(activeImg);
+      setFading(false);
+    }, 160);
+    return () => fadeTimeout.current && clearTimeout(fadeTimeout.current);
+  }, [activeImg]);
+
+  const goTo = (i) => setActiveImg(((i % product.images.length) + product.images.length) % product.images.length);
+
+  const onTouchStart = (e) => { touchStart.current = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchStart.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchStart.current;
+    if (dx > 50) goTo(activeImg - 1);
+    if (dx < -50) goTo(activeImg + 1);
+    touchStart.current = null;
+  };
+
+  return (
+    <div>
+      {/* Image principale — cadre premium, produit dominant, fond propre */}
+      <div
+        className="relative rounded-lg overflow-hidden cursor-zoom-in select-none"
+        style={{
+          aspectRatio: "4/5",
+          background: `radial-gradient(120% 100% at 50% 8%, ${COLORS.surface2} 0%, ${COLORS.surface} 55%, #0C0913 100%)`,
+          boxShadow: `0 0 0 1px ${COLORS.line}, 0 30px 60px -30px rgba(0,0,0,0.7)`,
+        }}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onClick={() => setZoomOpen(true)}
+      >
+        <div className="absolute inset-0 flex items-center justify-center p-6 sm:p-10">
+          <img
+            src={product.images[displayImg]}
+            alt={product.name}
+            className="max-w-full max-h-full w-auto h-auto object-contain drop-shadow-[0_25px_40px_rgba(0,0,0,0.55)] transition-all duration-300 ease-out"
+            style={{ opacity: fading ? 0 : 1, transform: fading ? "scale(0.985)" : "scale(1)" }}
+            onError={handleImgError}
+            loading="eager"
+            decoding="async"
+          />
+        </div>
+        <TagCorner />
+        <div className="absolute top-3 left-3 flex gap-2">
+          {product.isNew && <Badge tone="new">Nouveau</Badge>}
+          {product.featured && <Badge tone="dark">En avant</Badge>}
+        </div>
+        {product.images.length > 1 && (
+          <div
+            className="absolute bottom-3 right-3 px-2.5 py-1 rounded-sm text-[10px] font-mono"
+            style={{ background: "rgba(8,6,13,0.65)", color: COLORS.inkDim }}
+          >
+            {displayImg + 1} / {product.images.length}
+          </div>
+        )}
+        <div
+          className="absolute bottom-3 left-3 px-2.5 py-1 rounded-sm text-[10px] uppercase tracking-widest hidden sm:flex items-center gap-1"
+          style={{ background: "rgba(8,6,13,0.55)", color: COLORS.inkDim, fontFamily: "Inter" }}
+        >
+          ⤢ Cliquer pour zoomer
+        </div>
+      </div>
+
+      {/* Miniatures — indicateur discret, pas de gros contour */}
+      {product.images.length > 1 && (
+        <div className="flex gap-2.5 mt-4 overflow-x-auto pb-1">
+          {product.images.map((im, i) => (
+            <button
+              key={i}
+              onClick={() => goTo(i)}
+              className="relative shrink-0 rounded-md overflow-hidden transition-all duration-200"
+              style={{
+                width: 64,
+                height: 80,
+                background: COLORS.surface,
+                boxShadow: activeImg === i ? `0 0 0 2px ${COLORS.magenta}, 0 0 14px rgba(255,46,196,0.4)` : `0 0 0 1px ${COLORS.line}`,
+                opacity: activeImg === i ? 1 : 0.6,
+              }}
+            >
+              <img src={im} alt="" className="w-full h-full object-cover" onError={handleImgError} loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {zoomOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-10"
+          style={{ background: "rgba(5,4,9,0.94)" }}
+          onClick={() => setZoomOpen(false)}
+        >
+          <button
+            onClick={() => setZoomOpen(false)}
+            className="absolute top-4 right-4 sm:top-6 sm:right-6 w-10 h-10 rounded-full flex items-center justify-center text-lg"
+            style={{ background: COLORS.surface2, color: COLORS.ink }}
+            aria-label="Fermer le zoom"
+          >
+            ✕
+          </button>
+          <img
+            src={product.images[displayImg]}
+            alt={product.name}
+            className="max-w-full max-h-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+            onError={handleImgError}
+          />
+          {product.images.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); goTo(activeImg - 1); }}
+                className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center"
+                style={{ background: "rgba(255,255,255,0.08)", color: COLORS.ink }}
+                aria-label="Image précédente"
+              >‹</button>
+              <button
+                onClick={(e) => { e.stopPropagation(); goTo(activeImg + 1); }}
+                className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center"
+                style={{ background: "rgba(255,255,255,0.08)", color: COLORS.ink }}
+                aria-label="Image suivante"
+              >›</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductPage({ product, brand, products, brands, onOpen, go }) {
+  const [selSize, setSelSize] = useState(product.sizes[0] || null);
+  const [selColor, setSelColor] = useState(product.colors[0] || null);
+
+  useEffect(() => { setSelSize(product.sizes[0] || null); setSelColor(product.colors[0] || null); }, [product.id]);
+
+  const similar = products.filter((p) => p.id !== product.id && p.categoryId === product.categoryId).slice(0, 4);
+  const categoryLabel = CATEGORIES.find((c) => c.id === product.categoryId)?.name;
+  const isShoe = product.categoryId === "chaussures";
+
+  return (
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-10">
+      <button onClick={() => go("catalog")} className="text-xs uppercase tracking-widest mb-6 inline-flex items-center gap-1.5" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+        ← Retour au catalogue
+      </button>
+
+      <div className="grid md:grid-cols-2 gap-10 lg:gap-16">
+        {/* Galerie — dominante */}
+        <Reveal y={22}>
+          <ProductGallery product={product} />
+        </Reveal>
+
+        {/* Informations — structure éditoriale */}
+        <Reveal delay={120} y={22}>
+          <div>
+            <div className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>{brand?.name}</div>
+            <h1 className="mt-2 leading-tight" style={{ fontFamily: "Anton", fontSize: "clamp(30px,4vw,44px)", color: COLORS.ink }}>{product.name.toUpperCase()}</h1>
+            <div className="mt-2 flex items-center gap-3 flex-wrap">
+              <span className="text-xs font-mono" style={{ color: COLORS.inkDim }}>Réf. {product.reference}</span>
+              {product.price != null && (
+                <span className="text-lg font-semibold" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{product.price} €</span>
+              )}
+              <span className="text-xs" style={{ fontFamily: "Inter" }}>
+                {product.availability
+                  ? <span style={{ color: COLORS.green }}>● Disponible</span>
+                  : <span style={{ color: "#FF5C7A" }}>● Rupture de stock</span>}
+              </span>
+            </div>
+
+            {product.description && (
+              <p className="mt-6 text-sm leading-relaxed max-w-md" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{product.description}</p>
+            )}
+
+            {product.colors.length > 0 && (
+              <div className="mt-7 pt-6 border-t" style={{ borderColor: COLORS.line }}>
+                <div className="text-[11px] uppercase tracking-widest mb-3" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+                  Couleur <span style={{ color: COLORS.ink }}>— {selColor}</span>
+                </div>
+                <div className="flex gap-2.5 flex-wrap">
+                  {product.colors.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => setSelColor(c)}
+                      className="w-9 h-9 rounded-full transition-transform duration-150 hover:scale-110"
+                      style={{
+                        background: COLOR_SWATCHES[c] || "#444",
+                        boxShadow: selColor === c ? `0 0 0 2px ${COLORS.bg}, 0 0 0 4px ${COLORS.magenta}, 0 0 12px rgba(255,46,196,0.5)` : `0 0 0 1px ${COLORS.line}`,
+                      }}
+                      aria-label={c}
+                      title={c}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {product.sizes.length > 0 && (
+              <div className="mt-6 pt-6 border-t" style={{ borderColor: COLORS.line }}>
+                <div className="text-[11px] uppercase tracking-widest mb-3" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+                  {isShoe ? "Pointure" : "Taille"}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {product.sizes.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setSelSize(s)}
+                      className="min-w-[46px] px-3 py-2.5 text-sm rounded-sm transition-all duration-150"
+                      style={{
+                        border: `1px solid ${selSize === s ? COLORS.magenta : COLORS.line}`,
+                        background: selSize === s ? "rgba(255,46,196,0.08)" : "transparent",
+                        color: selSize === s ? COLORS.magenta : COLORS.ink,
+                        fontFamily: "Inter",
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-8 flex flex-wrap gap-4">
+              <SolidButton
+                onClick={() => go("contact")}
+                className="!px-8 !py-4 !text-base tracking-wider"
+              >
+                Nous contacter pour ce produit
+              </SolidButton>
+              <GhostButton onClick={() => go("catalog")}>Continuer à explorer</GhostButton>
+            </div>
+
+            {/* Réassurance */}
+            <div className="mt-8 pt-6 border-t grid grid-cols-3 gap-3 text-center" style={{ borderColor: COLORS.line }}>
+              {[
+                ["🚚", "Livraison", "Partout en France"],
+                ["🤝", "Main propre", "Paris & IDF"],
+                ["💬", "Service client", "7j/7"],
+              ].map(([icon, t, s]) => (
+                <div key={t}>
+                  <div className="text-base">{icon}</div>
+                  <div className="text-[10px] uppercase tracking-widest font-semibold mt-1" style={{ color: COLORS.ink, fontFamily: "Inter" }}>{t}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{s}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Informations complémentaires */}
+            <div className="mt-6 pt-6 border-t text-sm space-y-2" style={{ borderColor: COLORS.line, fontFamily: "Inter" }}>
+              <div className="flex justify-between">
+                <span style={{ color: COLORS.inkDim }}>Catégorie</span>
+                <span style={{ color: COLORS.ink }}>{categoryLabel}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: COLORS.inkDim }}>Marque</span>
+                <span style={{ color: COLORS.ink }}>{brand?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span style={{ color: COLORS.inkDim }}>Authenticité</span>
+                <span style={{ color: COLORS.ink }}>Garantie</span>
+              </div>
+            </div>
+          </div>
+        </Reveal>
+      </div>
+
+      {similar.length > 0 && (
+        <div className="mt-24">
+          <Reveal><Eyebrow>Vous aimerez aussi</Eyebrow></Reveal>
+          <Reveal delay={70}>
+            <h2 className="mt-3 mb-6" style={{ fontFamily: "Anton", fontSize: 28, color: COLORS.ink }}>PRODUITS SIMILAIRES</h2>
+          </Reveal>
+          <RevealGroup className="grid grid-cols-2 md:grid-cols-4 gap-5" step={60} y={18}>
+            {similar.map((p) => (
+              <ProductCard key={p.id} product={p} brand={brands.find((b) => b.id === p.brandId)} onOpen={onOpen} />
+            ))}
+          </RevealGroup>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ---------------- Brands page ---------------- */
+
+function BrandsPage({ brands, products, onOpenBrand, selectedBrand, onOpen, go }) {
+  if (selectedBrand) {
+    const brand = brands.find((b) => b.id === selectedBrand);
+    const brandProducts = products.filter((p) => p.brandId === selectedBrand);
+    return (
+      <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
+        <button onClick={() => onOpenBrand(null)} className="text-xs uppercase tracking-widest mb-6" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+          ← Toutes les marques
+        </button>
+        <Eyebrow>Marque</Eyebrow>
+        <h1 className="mt-3 mb-2" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>{brand.name.toUpperCase()}</h1>
+        <p className="max-w-lg text-sm mb-8" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{brand.description}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+          {brandProducts.map((p) => (
+            <ProductCard key={p.id} product={p} brand={brand} onOpen={onOpen} />
+          ))}
+        </div>
+      </section>
+    );
+  }
+  return (
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
+      <Eyebrow>Univers Luxury Streetwear</Eyebrow>
+      <h1 className="mt-3 mb-8" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>MARQUES</h1>
+      <div className="grid md:grid-cols-2 gap-5">
+        {brands.map((b) => {
+          const count = products.filter((p) => p.brandId === b.id).length;
+          return (
+            <button key={b.id} onClick={() => onOpenBrand(b.id)} className="relative text-left p-6 rounded-sm border overflow-hidden group" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
+              <TagCorner />
+              <div style={{ fontFamily: "Anton", fontSize: 26, color: COLORS.ink }}>{b.name.toUpperCase()}</div>
+              <p className="text-sm mt-2 max-w-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{b.description}</p>
+              <div className="text-xs mt-4 uppercase tracking-widest" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>{count} produit{count > 1 ? "s" : ""} →</div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/* ---------------- Collections (curated views) ---------------- */
+
+function CollectionsPage({ products, brands, onOpen, go, setCategoryFilter }) {
+  const featured = products.filter((p) => p.featured);
+  const news = products.filter((p) => p.isNew);
+  const groups = [
+    { title: "PIÈCES SIGNATURE", items: featured },
+    { title: "DERNIÈRES ARRIVÉES", items: news },
+  ];
+  return (
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
+      <Eyebrow>Sélections</Eyebrow>
+      <h1 className="mt-3 mb-10" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>COLLECTIONS</h1>
+      {groups.map((g) => (
+        <div key={g.title} className="mb-14">
+          <h2 className="mb-5 neon-text" style={{ fontFamily: "Anton", fontSize: 24 }}>{g.title}</h2>
+          {g.items.length === 0 ? (
+            <p className="text-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucune pièce pour le moment.</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              {g.items.map((p) => (
+                <ProductCard key={p.id} product={p} brand={brands.find((b) => b.id === p.brandId)} onOpen={onOpen} />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/* ---------------- About ---------------- */
+
+function AboutPage({ go }) {
+  return (
+    <section className="max-w-4xl mx-auto px-5 md:px-8 py-16">
+      <Eyebrow>Maison</Eyebrow>
+      <h1 className="mt-3 mb-6" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>À PROPOS</h1>
+      <p className="text-sm leading-relaxed mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+        Luxury Streetwear est une plateforme catalogue réunissant plusieurs marques de streetwear premium. Notre rôle : sélectionner, présenter et organiser des pièces vestimentaires, chaussures, sacs, accessoires, casquettes et montres au sein d'une expérience unique.
+      </p>
+      <p className="text-sm leading-relaxed mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+        Chaque fiche produit indique clairement sa marque d'origine. Nous ne présentons aucun produit comme partenaire officiel, revendeur agréé ou affilié à une marque sans autorisation vérifiée.
+      </p>
+      <SolidButton onClick={() => go("catalog")}>Explorer le catalogue</SolidButton>
+    </section>
+  );
+}
+
+/* ---------------- Contact ---------------- */
+
+function ContactPage() {
+  const [sent, setSent] = useState(false);
+  const [form, setForm] = useState({ nom: "", prenom: "", email: "", tel: "", sujet: "", message: "" });
+
+  const submit = (e) => {
+    e.preventDefault();
+    setSent(true);
+  };
+
+  return (
+    <section className="max-w-5xl mx-auto px-5 md:px-8 py-16 grid md:grid-cols-[1.2fr_1fr] gap-12">
+      <div>
+        <Eyebrow>Contact</Eyebrow>
+        <h1 className="mt-3 mb-6" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>PARLONS-EN</h1>
+
+        {sent ? (
+          <div className="p-6 rounded-sm border neon-border" style={{ background: COLORS.surface }}>
+            <div className="neon-text" style={{ fontFamily: "Anton", fontSize: 20 }}>MESSAGE ENVOYÉ</div>
+            <p className="text-sm mt-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Nous revenons vers vous rapidement.</p>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="grid sm:grid-cols-2 gap-4">
+            <input required placeholder="Nom" className="px-4 py-3 text-sm rounded-sm sm:col-span-1" style={selectStyle} value={form.nom} onChange={(e) => setForm({ ...form, nom: e.target.value })} />
+            <input required placeholder="Prénom" className="px-4 py-3 text-sm rounded-sm sm:col-span-1" style={selectStyle} value={form.prenom} onChange={(e) => setForm({ ...form, prenom: e.target.value })} />
+            <input required type="email" placeholder="Email" className="px-4 py-3 text-sm rounded-sm sm:col-span-1" style={selectStyle} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <input placeholder="Téléphone" className="px-4 py-3 text-sm rounded-sm sm:col-span-1" style={selectStyle} value={form.tel} onChange={(e) => setForm({ ...form, tel: e.target.value })} />
+            <input required placeholder="Sujet" className="px-4 py-3 text-sm rounded-sm sm:col-span-2" style={selectStyle} value={form.sujet} onChange={(e) => setForm({ ...form, sujet: e.target.value })} />
+            <textarea required placeholder="Message" rows={5} className="px-4 py-3 text-sm rounded-sm sm:col-span-2" style={selectStyle} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} />
+            <div className="sm:col-span-2">
+              <SolidButton className="w-full sm:w-auto">Envoyer</SolidButton>
+            </div>
+          </form>
+        )}
+      </div>
+
+      <div className="space-y-6">
+        <div className="p-6 rounded-sm border" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
+          <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>Réseaux</div>
+          {["Instagram", "TikTok", "Snapchat", "WhatsApp"].map((s) => (
+            <div key={s} className="flex items-center justify-between py-2 border-b last:border-0 text-sm" style={{ borderColor: COLORS.line, fontFamily: "Inter", color: COLORS.ink }}>
+              {s}
+              <span className="text-xs" style={{ color: COLORS.inkDim }}>lien à renseigner</span>
+            </div>
+          ))}
+        </div>
+        <div className="p-6 rounded-sm border" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
+          <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>Service</div>
+          <p className="text-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Livraison partout en France. Remise en main propre disponible sur Paris et Île-de-France. Support 7j/7.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------- Admin dashboard ---------------- */
+
+function emptyProduct() {
+  return {
+    id: null,
+    name: "",
+    brandId: "",
+    categoryId: "",
+    reference: "",
+    description: "",
+    images: [],
+    sizes: [],
+    colors: [],
+    featured: false,
+    isNew: false,
+    availability: true,
+  };
+}
+
+/* ---------------- Admin login (Supabase Auth) ---------------- */
+
+function AdminLogin({ onSignedIn }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const client = await getSupabaseAuthClient();
+      const { data, error: signInError } = await client.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        throw new Error(signInError.message || "Authentication error");
+      }
+      if (!data || !data.user) {
+        throw new Error("Authentication error");
+      }
+      if (data.user.id !== ADMIN_USER_ID) {
+        await client.auth.signOut();
+        throw new Error("Unauthorized : ce compte n'est pas administrateur.");
+      }
+      onSignedIn();
+    } catch (err) {
+      setError(err && err.message ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="max-w-sm mx-auto px-5 py-20">
+      <Eyebrow>Accès restreint</Eyebrow>
+      <h1 className="mt-3 mb-6" style={{ fontFamily: "Anton", fontSize: 32, color: COLORS.ink }}>ADMIN — CONNEXION</h1>
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Email</label>
+          <input
+            required
+            type="email"
+            autoComplete="username"
+            className="w-full px-3 py-2 text-sm rounded-sm"
+            style={selectStyle}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Mot de passe</label>
+          <input
+            required
+            type="password"
+            autoComplete="current-password"
+            className="w-full px-3 py-2 text-sm rounded-sm"
+            style={selectStyle}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+        {error && (
+          <div className="text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+            {error}
+          </div>
+        )}
+        <SolidButton className="w-full">{loading ? "Connexion…" : "Se connecter"}</SolidButton>
+      </form>
+    </section>
+  );
+}
+
+function AdminDashboard({ products, setProducts, brands, setBrands, categories, setCategories, saveStatus, onSignOut, onReloadProducts, productsLoading, productsError, onReloadBrands, brandsLoading, brandsError }) {
+  const [tab, setTab] = useState("products");
+  const [editing, setEditing] = useState(null);
+  const [editingBrand, setEditingBrand] = useState(null);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
+  const fileInputRef = useRef(null);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [debugLog, setDebugLog] = useState([]);
+  const [dragIndex, setDragIndex] = useState(null);
+  const [isDraggingOverDrop, setIsDraggingOverDrop] = useState(false);
+
+  const tabs = [
+    ["products", "Produits"],
+    ["brands", "Marques"],
+    ["categories", "Catégories"],
+  ];
+
+  const [saveError, setSaveError] = useState("");
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  const [saveErrorBrand, setSaveErrorBrand] = useState("");
+  const [savingBrand, setSavingBrand] = useState(false);
+  const [deleteErrorBrand, setDeleteErrorBrand] = useState("");
+  const [confirmDeleteBrand, setConfirmDeleteBrand] = useState(null);
+
+  const saveProduct = async () => {
+    if (!editing.name || !editing.brandId || !editing.categoryId || !editing.reference) return;
+    setSaveError("");
+    try {
+      await requireAdmin();
+    } catch (err) {
+      setSaveError(err && err.message ? err.message : String(err));
+      return;
+    }
+
+    setSavingProduct(true);
+    try {
+      const client = await getSupabaseAuthClient();
+      const row = productToRow(editing);
+      if (editing.id) {
+        const { error } = await client.from("products").update(row).eq("id", editing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await client.from("products").insert(row);
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.error("Enregistrement produit échoué:", err);
+      setSaveError(
+        "Impossible d'enregistrer le produit. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+      setSavingProduct(false);
+      return; // le formulaire "editing" est conservé, rien n'est perdu
+    }
+
+    if (onReloadProducts) {
+      await onReloadProducts();
+    }
+    setSavingProduct(false);
+    setEditing(null);
+  };
+
+  const deleteProduct = async (id) => {
+    setDeleteError("");
+    try {
+      await requireAdmin();
+      const client = await getSupabaseAuthClient();
+      const { error } = await client.from("products").delete().eq("id", id);
+      if (error) throw error;
+      if (onReloadProducts) {
+        await onReloadProducts();
+      }
+      setConfirmDelete(null);
+    } catch (err) {
+      console.error("Suppression produit échouée:", err && err.message ? err.message : err);
+      setDeleteError(
+        "Impossible de supprimer le produit. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+      // on laisse confirmDelete ouvert pour que l'admin voie l'erreur
+    }
+  };
+
+  const openFilePicker = () => fileInputRef.current?.click();
+
+  const handleFilesSelected = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+
+    setUploadStatus("uploading");
+    setDebugLog([]);
+
+    let accessToken;
+    try {
+      ({ accessToken } = await requireAdmin());
+    } catch (err) {
+      const detail = err && err.message ? err.message : String(err);
+      setDebugLog([{ fileName: "—", step: "connexion", ok: false, detail }]);
+      setUploadStatus("done");
+      return;
+    }
+
+    const newUrls = [];
+    const fileLogs = [];
+
+    await Promise.allSettled(
+      files.map(async (file) => {
+        const fileName = file.name || "(photo sans nom)";
+        const onStep = (step, ok, detail) => {
+          fileLogs.push({ fileName, step, ok, detail });
+          setDebugLog((prev) => [...prev, { fileName, step, ok, detail }]);
+        };
+        try {
+          const uploaded = await uploadToSupabase(file, accessToken, onStep);
+          newUrls.push(uploaded.publicUrl);
+        } catch (err) {
+          if (!fileLogs.some((l) => l.fileName === fileName && !l.ok)) {
+            const detail = err && err.message ? err.message : String(err);
+            fileLogs.push({ fileName, step: "upload", ok: false, detail });
+            setDebugLog((prev) => [...prev, { fileName, step: "upload", ok: false, detail }]);
+          }
+        }
+      })
+    );
+
+    if (newUrls.length > 0) {
+      setEditing((e) => ({ ...e, images: [...e.images, ...newUrls] }));
+    }
+    setUploadStatus("done");
+  };
+
+  const onFileInputChange = (e) => {
+    handleFilesSelected(e.target.files);
+    e.target.value = "";
+  };
+
+  const onDropZoneDragOver = (e) => { e.preventDefault(); setIsDraggingOverDrop(true); };
+  const onDropZoneDragLeave = () => setIsDraggingOverDrop(false);
+  const onDropZoneDrop = (e) => {
+    e.preventDefault();
+    setIsDraggingOverDrop(false);
+    handleFilesSelected(e.dataTransfer.files);
+  };
+
+  const removeImage = async (idx) => {
+    const url = editing.images[idx];
+    setEditing((e) => ({ ...e, images: e.images.filter((_, i) => i !== idx) }));
+    try {
+      const { accessToken } = await requireAdmin();
+      await deleteFromSupabase(url, accessToken);
+    } catch (err) {
+      console.error("Suppression refusée :", err && err.message ? err.message : err);
+    }
+  };
+
+  const setPrimaryImage = (idx) => {
+    setEditing((e) => {
+      if (idx === 0) return e;
+      const images = [...e.images];
+      const [chosen] = images.splice(idx, 1);
+      images.unshift(chosen);
+      return { ...e, images };
+    });
+  };
+
+  const onImageDragStart = (idx) => setDragIndex(idx);
+  const onImageDragOver = (e) => e.preventDefault();
+  const onImageDrop = (idx) => {
+    setEditing((e) => {
+      if (dragIndex === null || dragIndex === idx) return e;
+      const images = [...e.images];
+      const [moved] = images.splice(dragIndex, 1);
+      images.splice(idx, 0, moved);
+      return { ...e, images };
+    });
+    setDragIndex(null);
+  };
+
+  const toggleListValue = (field, value) => {
+    setEditing((e) => {
+      const list = e[field];
+      return { ...e, [field]: list.includes(value) ? list.filter((v) => v !== value) : [...list, value] };
+    });
+  };
+
+  const saveBrand = async () => {
+    if (!editingBrand.name) return;
+    setSaveErrorBrand("");
+    try {
+      await requireAdmin();
+    } catch (err) {
+      setSaveErrorBrand(err && err.message ? err.message : String(err));
+      return;
+    }
+
+    setSavingBrand(true);
+    try {
+      const client = await getSupabaseAuthClient();
+      const row = brandToRow(editingBrand);
+      if (editingBrand.id) {
+        const { error } = await client.from("brands").update(row).eq("id", editingBrand.id);
+        if (error) throw error;
+      } else {
+        const { error } = await client.from("brands").insert(row);
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.error("Enregistrement marque échoué:", err);
+      setSaveErrorBrand(
+        "Impossible d'enregistrer la marque. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+      setSavingBrand(false);
+      return; // le formulaire "editingBrand" est conservé, rien n'est perdu
+    }
+
+    if (onReloadBrands) {
+      await onReloadBrands();
+    }
+    setSavingBrand(false);
+    setEditingBrand(null);
+  };
+
+  const deleteBrand = async (id) => {
+    setDeleteErrorBrand("");
+    try {
+      await requireAdmin();
+      const client = await getSupabaseAuthClient();
+      const { error } = await client.from("brands").delete().eq("id", id);
+      if (error) throw error;
+      if (onReloadBrands) {
+        await onReloadBrands();
+      }
+      setConfirmDeleteBrand(null);
+    } catch (err) {
+      console.error("Suppression marque échouée:", err && err.message ? err.message : err);
+      setDeleteErrorBrand(
+        "Impossible de supprimer la marque. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+      // on laisse confirmDeleteBrand ouvert pour que l'admin voie l'erreur
+    }
+  };
+
+  const saveCategory = () => {
+    if (!editingCategory.name) return;
+    if (editingCategory.id) {
+      setCategories((prev) => prev.map((c) => (c.id === editingCategory.id ? editingCategory : c)));
+    } else {
+      const id = editingCategory.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      setCategories((prev) => [...prev, { ...editingCategory, id, tag: String(prev.length + 1).padStart(2, "0") }]);
+    }
+    setEditingCategory(null);
+  };
+  const deleteCategory = (id) => setCategories((prev) => prev.filter((c) => c.id !== id));
+
+  return (
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-10">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <Eyebrow>Back-office</Eyebrow>
+        {onSignOut && (
+          <button onClick={onSignOut} className="text-[11px] uppercase tracking-widest" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+            Se déconnecter
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap mt-3 mb-2">
+        <h1 style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,40px)", color: COLORS.ink }}>ADMINISTRATION</h1>
+        {saveStatus && (
+          <span className="text-[11px] uppercase tracking-widest" style={{ color: saveStatus === "erreur" ? "#FF5C7A" : COLORS.magenta, fontFamily: "Inter" }}>
+            {saveStatus === "enregistrement" ? "Enregistrement…" : saveStatus === "enregistré" ? "✓ Enregistré" : saveStatus === "erreur" ? "⚠ Erreur de sauvegarde" : ""}
+          </span>
+        )}
+      </div>
+      <p className="text-sm mb-8" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+        Les produits et les marques sont enregistrés directement dans Supabase et restent disponibles après actualisation de la page, changement d'appareil ou reconnexion.
+      </p>
+
+      <div className="flex gap-2 mb-8 border-b" style={{ borderColor: COLORS.line }}>
+        {tabs.map(([t, label]) => (
+          <button
+            key={t}
+            onClick={() => { setTab(t); setEditing(null); setEditingBrand(null); setEditingCategory(null); }}
+            className="px-4 py-3 text-xs uppercase tracking-widest font-semibold"
+            style={{ color: tab === t ? COLORS.magenta : COLORS.inkDim, borderBottom: tab === t ? `2px solid ${COLORS.magenta}` : "2px solid transparent", fontFamily: "Inter" }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "products" && !editing && (
+        <div>
+          {productsError && (
+            <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+              {productsError}
+            </div>
+          )}
+          <SolidButton onClick={() => setEditing(emptyProduct())} className="mb-6">+ Ajouter un produit</SolidButton>
+          {productsLoading && (
+            <p className="text-xs mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Chargement des produits depuis Supabase…</p>
+          )}
+          {!productsLoading && products.length === 0 && !productsError && (
+            <p className="text-xs mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucun produit dans Supabase pour le moment.</p>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ fontFamily: "Inter" }}>
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-widest" style={{ color: COLORS.inkDim }}>
+                  <th className="py-2 pr-4">Produit</th>
+                  <th className="py-2 pr-4">Marque</th>
+                  <th className="py-2 pr-4">Catégorie</th>
+                  <th className="py-2 pr-4">Réf.</th>
+                  <th className="py-2 pr-4">Statut</th>
+                  <th className="py-2 pr-4">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((p) => (
+                  <tr key={p.id} className="border-t" style={{ borderColor: COLORS.line }}>
+                    <td className="py-2 pr-4 flex items-center gap-2">
+                      <img src={p.images[0]} className="w-8 h-10 object-cover rounded-sm" alt="" onError={handleImgError} />
+                      {p.name}
+                    </td>
+                    <td className="py-2 pr-4" style={{ color: COLORS.inkDim }}>{brands.find((b) => b.id === p.brandId)?.name || "—"}</td>
+                    <td className="py-2 pr-4" style={{ color: COLORS.inkDim }}>{categories.find((c) => c.id === p.categoryId)?.name || "—"}</td>
+                    <td className="py-2 pr-4 font-mono text-xs" style={{ color: COLORS.inkDim }}>{p.reference}</td>
+                    <td className="py-2 pr-4">
+                      <div className="flex gap-1 flex-wrap">
+                        {p.isNew && <Badge tone="new">Nouveau</Badge>}
+                        {p.featured && <Badge tone="dark">En avant</Badge>}
+                        {!p.availability && <Badge tone="dark">Rupture</Badge>}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <div className="flex gap-3">
+                        <button onClick={() => setEditing(p)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta }}>Modifier</button>
+                        <button onClick={() => setConfirmDelete(p.id)} className="text-xs uppercase tracking-widest" style={{ color: "#FF5C7A" }}>Supprimer</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === "products" && editing && (
+        <div className="max-w-3xl">
+          <div className="flex items-center justify-between mb-6">
+            <div style={{ fontFamily: "Anton", fontSize: 22, color: COLORS.ink }}>{editing.id ? "MODIFIER LE PRODUIT" : "NOUVEAU PRODUIT"}</div>
+            <button onClick={() => setEditing(null)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim }}>Annuler</button>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Nom du produit</label>
+              <input className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle} value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Référence</label>
+              <input className="w-full px-3 py-2 text-sm rounded-sm font-mono" style={selectStyle} value={editing.reference} onChange={(e) => setEditing({ ...editing, reference: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Marque</label>
+              <select className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle} value={editing.brandId} onChange={(e) => setEditing({ ...editing, brandId: e.target.value })}>
+                <option value="">— Choisir —</option>
+                {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Catégorie</label>
+              <select className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle} value={editing.categoryId} onChange={(e) => setEditing({ ...editing, categoryId: e.target.value })}>
+                <option value="">— Choisir —</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Description</label>
+              <textarea rows={3} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle} value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+                Photos ({editing.images.length})
+              </label>
+
+              {editing.images.length > 0 && (
+                <>
+                  <div className="flex flex-wrap gap-3 mb-3">
+                    {editing.images.map((im, i) => (
+                      <div
+                        key={im + i}
+                        className="relative"
+                        draggable
+                        onDragStart={() => onImageDragStart(i)}
+                        onDragOver={onImageDragOver}
+                        onDrop={() => onImageDrop(i)}
+                        style={{ cursor: "grab", opacity: dragIndex === i ? 0.4 : 1 }}
+                        title="Glisser pour réorganiser"
+                      >
+                        <img src={im} className="w-16 h-20 object-cover rounded-sm" alt="" onError={handleImgError} style={{ border: i === 0 ? `2px solid ${COLORS.magenta}` : `1px solid ${COLORS.line}` }} />
+                        <button
+                          onClick={() => removeImage(i)}
+                          className="absolute -top-2 -right-2 w-5 h-5 rounded-full text-xs"
+                          style={{ background: "#FF5C7A", color: "#08060D" }}
+                          title="Supprimer la photo"
+                        >
+                          ✕
+                        </button>
+                        {i === 0 ? (
+                          <span
+                            className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[9px] uppercase tracking-widest font-semibold rounded-sm whitespace-nowrap"
+                            style={{ background: COLORS.magenta, color: "#08060D", fontFamily: "Inter" }}
+                          >
+                            ★ Principale
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setPrimaryImage(i)}
+                            className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[9px] uppercase tracking-widest rounded-sm whitespace-nowrap"
+                            style={{ background: COLORS.surface2, color: COLORS.inkDim, border: `1px solid ${COLORS.line}`, fontFamily: "Inter" }}
+                            title="Définir comme photo principale"
+                          >
+                            Définir principale
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+                    Glissez-déposez les photos pour changer leur ordre. La photo entourée en magenta est la photo principale.
+                  </p>
+                </>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={FILE_INPUT_ACCEPT}
+                multiple
+                className="hidden"
+                onChange={onFileInputChange}
+              />
+
+              <div
+                onDragOver={onDropZoneDragOver}
+                onDragLeave={onDropZoneDragLeave}
+                onDrop={onDropZoneDrop}
+                onClick={openFilePicker}
+                className="flex flex-col items-center justify-center gap-2 px-4 py-8 rounded-sm text-center cursor-pointer transition-colors"
+                style={{
+                  border: `2px dashed ${isDraggingOverDrop ? COLORS.magenta : COLORS.line}`,
+                  background: isDraggingOverDrop ? COLORS.surface2 : "transparent",
+                }}
+              >
+                <span style={{ fontSize: 22 }}>📷</span>
+                <span className="text-sm font-semibold" style={{ fontFamily: "Inter", color: COLORS.ink }}>
+                  Glissez-déposez vos photos ici
+                </span>
+                <span className="text-xs" style={{ fontFamily: "Inter", color: COLORS.inkDim }}>
+                  ou cliquez pour choisir depuis mon téléphone / ordinateur
+                </span>
+              </div>
+              <div className="mt-3">
+                <GhostButton onClick={openFilePicker}>📷 Choisir depuis mon téléphone</GhostButton>
+              </div>
+
+              {uploadStatus === "uploading" && (
+                <div className="text-xs mt-3" style={{ fontFamily: "Inter", color: COLORS.magenta }}>
+                  Import des photos en cours…
+                </div>
+              )}
+              {uploadStatus === "done" && debugLog.every((l) => l.ok) && debugLog.length > 0 && (
+                <div className="text-xs mt-3" style={{ fontFamily: "Inter", color: COLORS.green }}>
+                  Photos ajoutées ✓
+                </div>
+              )}
+
+              {debugLog.length > 0 && (
+                <div className="mt-3 rounded-sm overflow-hidden" style={{ border: `1px solid ${COLORS.line}` }}>
+                  <div className="px-3 py-2 text-[10px] uppercase tracking-widest" style={{ background: COLORS.surface2, color: COLORS.inkDim, fontFamily: "Inter" }}>
+                    Journal d'import
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    {Object.entries(
+                      debugLog.reduce((acc, l) => {
+                        (acc[l.fileName] = acc[l.fileName] || []).push(l);
+                        return acc;
+                      }, {})
+                    ).map(([fileName, entries]) => (
+                      <div key={fileName} className="px-3 py-2 border-t" style={{ borderColor: COLORS.line }}>
+                        <div className="text-xs font-semibold mb-1" style={{ fontFamily: "Inter", color: COLORS.ink }}>{fileName}</div>
+                        {entries.map((l, idx) => (
+                          <div key={idx} className="text-[11px] flex items-start gap-1.5" style={{ fontFamily: "Inter", color: l.ok ? COLORS.inkDim : "#FF5C7A" }}>
+                            <span>{l.ok ? "✅" : "❌"}</span>
+                            <span>
+                              <strong>{STEP_LABELS[l.step] || l.step}</strong>
+                              {l.detail ? ` — ${l.detail}` : ""}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[11px] mt-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+                Formats acceptés : JPG, JPEG, PNG, WEBP, HEIC, HEIF (photos iPhone). Les photos HEIC sont converties automatiquement en JPEG. Vous pouvez sélectionner plusieurs photos à la fois — un fichier n'est jamais refusé uniquement à cause de son type déclaré par le téléphone.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+                {editing.categoryId === "chaussures" ? "Pointures" : "Tailles"}
+              </label>
+              <select
+                className="w-full px-3 py-2 text-sm rounded-sm"
+                style={selectStyle}
+                value=""
+                onChange={(e) => { if (e.target.value) toggleListValue("sizes", e.target.value); e.target.value = ""; }}
+              >
+                <option value="">
+                  {editing.categoryId
+                    ? `+ Ajouter une ${editing.categoryId === "chaussures" ? "pointure" : "taille"}…`
+                    : "Choisissez d'abord une catégorie…"}
+                </option>
+                {sizeOptionsForCategory(editing.categoryId).map((s) => (
+                  <option key={s} value={s} disabled={editing.sizes.includes(s)}>
+                    {s}{editing.sizes.includes(s) ? " ✓" : ""}
+                  </option>
+                ))}
+              </select>
+              {editing.sizes.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2.5">
+                  {editing.sizes.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => toggleListValue("sizes", s)}
+                      className="px-3 py-1.5 text-xs rounded-sm flex items-center gap-1.5"
+                      style={{ border: `1px solid ${COLORS.magenta}`, color: COLORS.magenta, fontFamily: "Inter" }}
+                      title="Retirer"
+                    >
+                      {s} <span aria-hidden>✕</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Couleurs</label>
+              <select
+                className="w-full px-3 py-2 text-sm rounded-sm"
+                style={selectStyle}
+                value=""
+                onChange={(e) => { if (e.target.value) toggleListValue("colors", e.target.value); e.target.value = ""; }}
+              >
+                <option value="">+ Ajouter une couleur…</option>
+                {Object.keys(COLOR_SWATCHES).map((c) => (
+                  <option key={c} value={c} disabled={editing.colors.includes(c)}>
+                    {c}{editing.colors.includes(c) ? " ✓" : ""}
+                  </option>
+                ))}
+              </select>
+              {editing.colors.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2.5">
+                  {editing.colors.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => toggleListValue("colors", c)}
+                      className="pl-1.5 pr-2.5 py-1 text-xs rounded-full flex items-center gap-1.5"
+                      style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink, fontFamily: "Inter" }}
+                      title="Retirer"
+                    >
+                      <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: COLOR_SWATCHES[c] || "#444" }} />
+                      {c} <span aria-hidden>✕</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="sm:col-span-2 flex flex-wrap gap-6 pt-2">
+              <label className="flex items-center gap-2 text-sm" style={{ fontFamily: "Inter", color: COLORS.ink }}>
+                <input type="checkbox" checked={editing.featured} onChange={(e) => setEditing({ ...editing, featured: e.target.checked })} /> Mettre en avant
+              </label>
+              <label className="flex items-center gap-2 text-sm" style={{ fontFamily: "Inter", color: COLORS.ink }}>
+                <input type="checkbox" checked={editing.isNew} onChange={(e) => setEditing({ ...editing, isNew: e.target.checked })} /> Marquer comme nouveauté
+              </label>
+              <label className="flex items-center gap-2 text-sm" style={{ fontFamily: "Inter", color: COLORS.ink }}>
+                <input type="checkbox" checked={editing.availability} onChange={(e) => setEditing({ ...editing, availability: e.target.checked })} /> Disponible
+              </label>
+            </div>
+          </div>
+
+          {saveError && (
+            <div className="mt-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+              {saveError}
+            </div>
+          )}
+          <div className="mt-8 flex gap-3">
+            <SolidButton onClick={saveProduct}>{savingProduct ? "Enregistrement…" : "Enregistrer le produit"}</SolidButton>
+            <GhostButton onClick={() => setEditing(null)}>Annuler</GhostButton>
+          </div>
+        </div>
+      )}
+
+      {tab === "brands" && !editingBrand && (
+        <div>
+          {brandsError && (
+            <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+              {brandsError}
+            </div>
+          )}
+          <SolidButton onClick={() => setEditingBrand({ id: null, name: "", description: "" })} className="mb-6">+ Ajouter une marque</SolidButton>
+          {brandsLoading && (
+            <p className="text-xs mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Chargement des marques depuis Supabase…</p>
+          )}
+          {!brandsLoading && brands.length === 0 && !brandsError && (
+            <p className="text-xs mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucune marque dans Supabase pour le moment.</p>
+          )}
+          <div className="grid sm:grid-cols-2 gap-4">
+            {brands.map((b) => (
+              <div key={b.id} className="p-4 rounded-sm border" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
+                <div style={{ fontFamily: "Inter", fontWeight: 700, color: COLORS.ink }}>{b.name}</div>
+                <p className="text-xs mt-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{b.description}</p>
+                <div className="text-xs mt-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{products.filter((p) => p.brandId === b.id).length} produit(s)</div>
+                <div className="flex gap-3 mt-3">
+                  <button onClick={() => setEditingBrand(b)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta }}>Modifier</button>
+                  <button onClick={() => setConfirmDeleteBrand(b.id)} className="text-xs uppercase tracking-widest" style={{ color: "#FF5C7A" }}>Supprimer</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === "brands" && editingBrand && (
+        <div className="max-w-md">
+          <div style={{ fontFamily: "Anton", fontSize: 22, color: COLORS.ink, marginBottom: 16 }}>{editingBrand.id ? "MODIFIER LA MARQUE" : "NOUVELLE MARQUE"}</div>
+          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Nom</label>
+          <input className="w-full px-3 py-2 text-sm rounded-sm mb-4" style={selectStyle} value={editingBrand.name} onChange={(e) => setEditingBrand({ ...editingBrand, name: e.target.value })} />
+          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Description</label>
+          <textarea rows={3} className="w-full px-3 py-2 text-sm rounded-sm mb-4" style={selectStyle} value={editingBrand.description} onChange={(e) => setEditingBrand({ ...editingBrand, description: e.target.value })} />
+          {saveErrorBrand && (
+            <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+              {saveErrorBrand}
+            </div>
+          )}
+          <div className="flex gap-3">
+            <SolidButton onClick={saveBrand}>{savingBrand ? "Enregistrement…" : "Enregistrer"}</SolidButton>
+            <GhostButton onClick={() => setEditingBrand(null)}>Annuler</GhostButton>
+          </div>
+        </div>
+      )}
+
+      {tab === "categories" && !editingCategory && (
+        <div>
+          <SolidButton onClick={() => setEditingCategory({ id: null, name: "", desc: "" })} className="mb-6">+ Ajouter une catégorie</SolidButton>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {categories.map((c) => (
+              <div key={c.id} className="p-4 rounded-sm border" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
+                <div style={{ fontFamily: "Inter", fontWeight: 700, color: COLORS.ink }}>{c.name}</div>
+                <p className="text-xs mt-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{c.desc}</p>
+                <div className="text-xs mt-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{products.filter((p) => p.categoryId === c.id).length} produit(s)</div>
+                <div className="flex gap-3 mt-3">
+                  <button onClick={() => setEditingCategory(c)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta }}>Modifier</button>
+                  <button onClick={() => deleteCategory(c.id)} className="text-xs uppercase tracking-widest" style={{ color: "#FF5C7A" }}>Supprimer</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === "categories" && editingCategory && (
+        <div className="max-w-md">
+          <div style={{ fontFamily: "Anton", fontSize: 22, color: COLORS.ink, marginBottom: 16 }}>{editingCategory.id ? "MODIFIER LA CATÉGORIE" : "NOUVELLE CATÉGORIE"}</div>
+          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Nom</label>
+          <input className="w-full px-3 py-2 text-sm rounded-sm mb-4" style={selectStyle} value={editingCategory.name} onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })} />
+          <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Courte description</label>
+          <input className="w-full px-3 py-2 text-sm rounded-sm mb-4" style={selectStyle} value={editingCategory.desc} onChange={(e) => setEditingCategory({ ...editingCategory, desc: e.target.value })} />
+          <div className="flex gap-3">
+            <SolidButton onClick={saveCategory}>Enregistrer</SolidButton>
+            <GhostButton onClick={() => setEditingCategory(null)}>Annuler</GhostButton>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.7)" }}>
+          <div className="max-w-sm w-full p-6 rounded-sm neon-border" style={{ background: COLORS.surface }}>
+            <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>SUPPRIMER CE PRODUIT ?</div>
+            <p className="text-sm mt-2 mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Cette action est irréversible : le produit sera supprimé de Supabase.</p>
+            {deleteError && (
+              <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+                {deleteError}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <SolidButton onClick={() => deleteProduct(confirmDelete)}>Supprimer</SolidButton>
+              <GhostButton onClick={() => { setConfirmDelete(null); setDeleteError(""); }}>Annuler</GhostButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteBrand && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.7)" }}>
+          <div className="max-w-sm w-full p-6 rounded-sm neon-border" style={{ background: COLORS.surface }}>
+            <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>SUPPRIMER CETTE MARQUE ?</div>
+            <p className="text-sm mt-2 mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Cette action est irréversible : la marque sera supprimée de Supabase.</p>
+            {deleteErrorBrand && (
+              <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+                {deleteErrorBrand}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <SolidButton onClick={() => deleteBrand(confirmDeleteBrand)}>Supprimer</SolidButton>
+              <GhostButton onClick={() => { setConfirmDeleteBrand(null); setDeleteErrorBrand(""); }}>Annuler</GhostButton>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ---------------- Footer ---------------- */
+
+function Footer({ go }) {
+  return (
+    <footer className="relative overflow-hidden border-t mt-10" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
+      <div
+        aria-hidden
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: `
+            radial-gradient(50% 80% at 0% 100%, rgba(139,47,232,0.14), transparent 60%),
+            radial-gradient(50% 80% at 100% 0%, rgba(46,140,255,0.10), transparent 60%)
+          `,
+        }}
+      />
+      <div className="relative max-w-7xl mx-auto px-5 md:px-8 py-12 grid sm:grid-cols-2 md:grid-cols-4 gap-8">
+        <div>
+          <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>LUXURY <span className="neon-text">STREETWEAR</span></div>
+          <p className="text-xs mt-3 max-w-xs" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Plateforme catalogue streetwear premium — sélection multi-marques, service dédié.</p>
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-widest mb-3" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>Navigation</div>
+          {[["home","Accueil"],["catalog","Catalogue"],["catalog-new","Nouveautés"],["collections","Collections"],["contact","Contact"]].map(([r,l]) => (
+            <button key={r} onClick={() => go(r)} className="block text-xs py-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{l}</button>
+          ))}
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-widest mb-3" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>Catégories</div>
+          {CATEGORIES.map((c) => (
+            <div key={c.id} className="text-xs py-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{c.name}</div>
+          ))}
+        </div>
+        <div>
+          <div className="text-[11px] uppercase tracking-widest mb-3" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>Service</div>
+          <div className="text-xs py-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Livraison France entière</div>
+          <div className="text-xs py-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Remise en main propre — Paris/IDF</div>
+          <div className="text-xs py-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Support 7j/7</div>
+        </div>
+      </div>
+      <div className="relative border-t py-5 text-center text-[11px]" style={{ borderColor: COLORS.line, color: COLORS.inkDim, fontFamily: "Inter" }}>
+        © 2026 Luxury Streetwear — Tous droits réservés
+      </div>
+    </footer>
+  );
+}
+
+/* ---------------- App root ---------------- */
+
+const STORAGE_KEY = "luxury-streetwear-catalog-data";
+
+function App() {
+  const [route, setRoute] = useState("home");
+  // Supabase est la source de vérité pour les produits ET les marques :
+  // on démarre à vide (pas de INITIAL_PRODUCTS / BRANDS ici) et on affiche
+  // un état de chargement le temps du premier SELECT. INITIAL_PRODUCTS et
+  // BRANDS sont conservés plus haut dans le fichier au cas où ils
+  // serviraient ailleurs, mais ne sont plus utilisés comme donnée de repli.
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState("");
+  const [brands, setBrands] = useState([]);
+  const [brandsLoading, setBrandsLoading] = useState(true);
+  const [brandsError, setBrandsError] = useState("");
+  const [categories, setCategories] = useState(CATEGORIES);
+  const [selectedProductId, setSelectedProductId] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [selectedBrandId, setSelectedBrandId] = useState(null);
+
+  const [loaded, setLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("");
+
+  const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const isAdmin = !!(session && session.user && session.user.id === ADMIN_USER_ID);
+
+  useEffect(() => {
+    let unsubscribe = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const client = await getSupabaseAuthClient();
+        const { data } = await client.auth.getSession();
+        if (!cancelled) setSession(data.session || null);
+        const { data: sub } = client.auth.onAuthStateChange((_event, newSession) => {
+          setSession(newSession || null);
+        });
+        unsubscribe = () => sub.subscription.unsubscribe();
+      } catch (err) {
+        console.error("Supabase Auth indisponible:", err);
+      } finally {
+        if (!cancelled) setAuthChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const signOutAdmin = async () => {
+    try {
+      const client = await getSupabaseAuthClient();
+      await client.auth.signOut();
+    } catch (err) {
+      console.error("Déconnexion échouée:", err);
+    }
+    setSession(null);
+  };
+
+  /* ----- Produits : source de vérité = Supabase (table "products") -----
+     Important : on écrase TOUJOURS products avec le résultat du SELECT,
+     même si le tableau est vide. Aucun repli automatique sur
+     INITIAL_PRODUCTS — si Supabase renvoie 0 ligne, le catalogue doit
+     réellement afficher 0 produit. En cas d'échec réseau/RLS, on NE
+     VIDE PAS le catalogue actuellement affiché (pour éviter qu'une
+     coupure réseau transitoire fasse disparaître les produits à l'écran) ;
+     à la place, l'erreur est stockée dans productsError et affichée. */
+  const reloadProducts = async () => {
+    setProductsError("");
+    try {
+      const fresh = await loadProductsFromSupabase();
+      setProducts(fresh);
+    } catch (err) {
+      console.error("Chargement des produits depuis Supabase échoué:", err);
+      setProductsError(
+        "Impossible de charger les produits depuis Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+    }
+  };
+
+  /* ----- Marques : source de vérité = Supabase (table "brands") -----
+     Même logique que pour les produits : le tableau "brands" est
+     entièrement piloté par Supabase. En cas d'échec réseau/RLS, on
+     conserve la liste de marques actuellement affichée et on stocke
+     l'erreur dans brandsError plutôt que de vider la liste. */
+  const reloadBrands = async () => {
+    setBrandsError("");
+    try {
+      const fresh = await loadBrandsFromSupabase();
+      setBrands(fresh);
+    } catch (err) {
+      console.error("Chargement des marques depuis Supabase échoué:", err);
+      setBrandsError(
+        "Impossible de charger les marques depuis Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+    }
+  };
+
+  useEffect(() => {
+    reloadProducts().finally(() => { setProductsLoading(false); setLoaded(true); });
+    reloadBrands().finally(() => { setBrandsLoading(false); });
+  }, []);
+
+  /* ----- Catégories : encore en localStorage pour l'instant -----
+     Les marques ne sont plus lues/écrites ici : elles viennent
+     exclusivement de Supabase (table "brands", voir reloadBrands
+     ci-dessus). Seules les catégories restent gérées en local. */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.categories)) setCategories(data.categories);
+      }
+    } catch (err) {
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    setSaveStatus("enregistrement");
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ categories }));
+      setSaveStatus("enregistré");
+    } catch (err) {
+      setSaveStatus("erreur");
+    }
+  }, [categories, loaded]);
+
+  const go = (r) => {
+    setRoute(r);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const openProduct = (id) => {
+    setSelectedProductId(id);
+    setRoute("product");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const selectedProduct = products.find((p) => p.id === selectedProductId);
+  const selectedBrand = selectedProduct ? brands.find((b) => b.id === selectedProduct.brandId) : null;
+
+  return (
+    <div style={{ background: COLORS.bg, minHeight: "100vh" }}>
+      <style>{FONT_IMPORT}{`
+        * { box-sizing: border-box; }
+        body { margin: 0; background: ${COLORS.bg}; }
+        select, input, textarea { outline: none; }
+        select:focus, input:focus, textarea:focus { outline: 2px solid ${COLORS.magenta}; outline-offset: 1px; }
+        button:focus-visible, a:focus-visible { outline: 2px solid ${COLORS.magenta}; outline-offset: 2px; }
+        ::selection { background: ${COLORS.magenta}; color: #08060D; }
+
+        .neon-text {
+          background: linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta} 45%, ${COLORS.blue} 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          filter: drop-shadow(0 0 18px rgba(255,46,196,0.45)) drop-shadow(0 0 36px rgba(139,47,232,0.35));
+        }
+        .neon-border {
+          border: 1px solid ${COLORS.purple};
+          box-shadow: 0 0 8px rgba(139,47,232,0.55), 0 0 22px rgba(255,46,196,0.25), inset 0 0 8px rgba(139,47,232,0.15);
+        }
+        @keyframes neonPulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.72; }
+        }
+        .neon-pulse { animation: neonPulse 2.4s ease-in-out infinite; }
+
+        /* ---------- Fond galaxie global ---------- */
+        .lxs-galaxy {
+          position: fixed;
+          inset: 0;
+          z-index: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+        .lxs-galaxy-base {
+          position: absolute;
+          inset: 0;
+          background:
+            radial-gradient(120% 90% at 15% -10%, rgba(46,140,255,0.10), transparent 55%),
+            radial-gradient(120% 90% at 85% 110%, rgba(139,47,232,0.12), transparent 55%),
+            linear-gradient(180deg, #050308 0%, #08060D 40%, #0A0714 70%, #050308 100%);
+        }
+        .lxs-halo {
+          position: absolute;
+          width: 42vw;
+          height: 42vw;
+          max-width: 620px;
+          max-height: 620px;
+          min-width: 280px;
+          min-height: 280px;
+          border-radius: 9999px;
+          filter: blur(90px);
+          opacity: 0.5;
+          animation: lxsBreathe 12s ease-in-out infinite;
+          will-change: opacity, transform;
+        }
+        .lxs-halo-violet { background: radial-gradient(circle, rgba(139,47,232,0.55), transparent 70%); animation-delay: 0s; }
+        .lxs-halo-blue { background: radial-gradient(circle, rgba(46,140,255,0.42), transparent 70%); animation-delay: 2.5s; }
+        .lxs-halo-magenta { background: radial-gradient(circle, rgba(255,46,196,0.40), transparent 70%); animation-delay: 5s; }
+        .lxs-halo-green { background: radial-gradient(circle, rgba(57,255,140,0.22), transparent 70%); animation-delay: 7.5s; }
+
+        .lxs-stars {
+          position: absolute;
+          inset: -12%;
+          background-repeat: repeat;
+          opacity: 0.55;
+        }
+        .lxs-stars-far {
+          background-image:
+            radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.75), transparent 60%),
+            radial-gradient(1px 1px at 35% 65%, rgba(255,255,255,0.55), transparent 60%),
+            radial-gradient(1px 1px at 60% 15%, rgba(255,255,255,0.65), transparent 60%),
+            radial-gradient(1px 1px at 80% 45%, rgba(255,255,255,0.5), transparent 60%),
+            radial-gradient(1px 1px at 25% 85%, rgba(255,255,255,0.6), transparent 60%),
+            radial-gradient(1px 1px at 92% 80%, rgba(255,255,255,0.5), transparent 60%);
+          background-size: 340px 340px;
+          animation: lxsDriftSlow 140s linear infinite;
+        }
+        .lxs-stars-near {
+          background-image:
+            radial-gradient(1.5px 1.5px at 15% 40%, rgba(255,255,255,0.8), transparent 60%),
+            radial-gradient(1.5px 1.5px at 50% 75%, rgba(255,255,255,0.6), transparent 60%),
+            radial-gradient(1.5px 1.5px at 70% 20%, rgba(255,255,255,0.7), transparent 60%),
+            radial-gradient(1.5px 1.5px at 88% 60%, rgba(255,255,255,0.55), transparent 60%);
+          background-size: 480px 480px;
+          opacity: 0.4;
+          animation: lxsDriftSlow 200s linear infinite reverse;
+        }
+        @keyframes lxsBreathe {
+          0%, 100% { opacity: 0.35; transform: scale(1); }
+          50% { opacity: 0.65; transform: scale(1.06); }
+        }
+        @keyframes lxsDriftSlow {
+          0% { transform: translate3d(0,0,0); }
+          50% { transform: translate3d(-1.5%, -1%, 0); }
+          100% { transform: translate3d(0,0,0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+      `}</style>
+
+      <GalaxyBackground />
+
+      <div className="relative" style={{ zIndex: 1 }}>
+      <Header route={route} go={go} />
+
+      {route === "home" && (
+        <>
+          <Hero go={go} />
+          <CategoryGrid go={go} setCategoryFilter={setCategoryFilter} />
+          <section
+            className="max-w-7xl mx-auto px-5 md:px-8 pb-16"
+            style={{ background: "radial-gradient(70% 60% at 50% 0%, rgba(46,140,255,0.05), transparent 70%)" }}
+          >
+            <div className="flex items-end justify-between mb-6">
+              <Reveal>
+                <div>
+                  <Eyebrow>Nouveautés</Eyebrow>
+                  <h2 className="mt-3" style={{ fontFamily: "Anton", fontSize: "clamp(24px,4vw,36px)", color: COLORS.ink }}>DERNIÈRES ARRIVÉES</h2>
+                </div>
+              </Reveal>
+              <GhostButton onClick={() => go("catalog-new")}>Voir tout</GhostButton>
+            </div>
+            <RevealGroup className="grid grid-cols-2 md:grid-cols-4 gap-5" step={70} y={20}>
+              {products.filter((p) => p.isNew).slice(0, 4).map((p) => (
+                <ProductCard key={p.id} product={p} brand={brands.find((b) => b.id === p.brandId)} onOpen={openProduct} />
+              ))}
+            </RevealGroup>
+          </section>
+          <section
+            className="max-w-7xl mx-auto px-5 md:px-8 pb-20"
+            style={{ background: "radial-gradient(70% 60% at 50% 100%, rgba(139,47,232,0.06), transparent 70%)" }}
+          >
+            <div className="flex items-end justify-between mb-6">
+              <Reveal>
+                <div>
+                  <Eyebrow>Sélection</Eyebrow>
+                  <h2 className="mt-3" style={{ fontFamily: "Anton", fontSize: "clamp(24px,4vw,36px)", color: COLORS.ink }}>PIÈCES SIGNATURE</h2>
+                </div>
+              </Reveal>
+              <GhostButton onClick={() => go("collections")}>Voir tout</GhostButton>
+            </div>
+            <RevealGroup className="grid grid-cols-2 md:grid-cols-4 gap-5" step={70} y={20}>
+              {products.filter((p) => p.featured).slice(0, 4).map((p) => (
+                <ProductCard key={p.id} product={p} brand={brands.find((b) => b.id === p.brandId)} onOpen={openProduct} />
+              ))}
+            </RevealGroup>
+          </section>
+        </>
+      )}
+
+      {route === "catalog" && (
+        <Catalog products={products} brands={brands} initialCategory={categoryFilter} forceNew={false} onOpen={openProduct} go={go} />
+      )}
+      {route === "catalog-new" && (
+        <Catalog products={products} brands={brands} initialCategory="all" forceNew={true} onOpen={openProduct} go={go} />
+      )}
+
+      {route === "product" && selectedProduct && (
+        <ProductPage product={selectedProduct} brand={selectedBrand} products={products} brands={brands} onOpen={openProduct} go={go} />
+      )}
+
+      {route === "brands" && (
+        <BrandsPage brands={brands} products={products} onOpenBrand={setSelectedBrandId} selectedBrand={selectedBrandId} onOpen={openProduct} go={go} />
+      )}
+
+      {route === "collections" && (
+        <CollectionsPage products={products} brands={brands} onOpen={openProduct} go={go} setCategoryFilter={setCategoryFilter} />
+      )}
+
+      {route === "about" && <AboutPage go={go} />}
+
+      {route === "contact" && <ContactPage />}
+
+      {route === "admin" && !authChecked && (
+        <section className="max-w-7xl mx-auto px-5 md:px-8 py-20 text-center">
+          <p className="text-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Vérification de la session…</p>
+        </section>
+      )}
+
+      {route === "admin" && authChecked && !isAdmin && (
+        <AdminLogin onSignedIn={() => { /* onAuthStateChange met déjà à jour session */ }} />
+      )}
+
+      {route === "admin" && authChecked && isAdmin && (
+        <AdminDashboard
+          products={products} setProducts={setProducts}
+          brands={brands} setBrands={setBrands}
+          categories={categories} setCategories={setCategories}
+          saveStatus={saveStatus}
+          onSignOut={signOutAdmin}
+          onReloadProducts={reloadProducts}
+          productsLoading={productsLoading}
+          productsError={productsError}
+          onReloadBrands={reloadBrands}
+          brandsLoading={brandsLoading}
+          brandsError={brandsError}
+        />
+      )}
+
+      <Footer go={go} />
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
