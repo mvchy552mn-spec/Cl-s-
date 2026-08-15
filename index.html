@@ -482,6 +482,60 @@ async function loadBrandsFromSupabase() {
   return (data || []).map(rowToBrand);
 }
 
+/* ============================================================
+   SUPABASE — table "reviews" (persistance réelle des avis clients)
+   ------------------------------------------------------------
+   Même logique que pour les marques : conversion row <-> objet
+   React, + helper de chargement de la liste complète des avis
+   depuis Supabase. La table s'appelle "reviews" côté Supabase.
+
+   Colonnes : id (uuid), first_name (text), rating (smallint 1-5),
+   comment (text), photo_url (text, nullable), video_url (text,
+   nullable), is_visible (boolean), created_at (timestamptz).
+
+   Note : la lecture publique (RLS) ne renvoie que les lignes avec
+   is_visible = true. Depuis l'admin (utilisateur authentifié), la
+   policy de lecture publique s'applique aussi — l'admin ne verra
+   donc que les avis visibles via ce SELECT simple. C'est cohérent
+   avec l'usage actuel (les avis masqués ne sont pas rechargés tant
+   qu'ils ne sont pas rebasculés en visible côté base).
+   ============================================================ */
+
+function rowToReview(row) {
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    rating: row.rating,
+    comment: row.comment,
+    photoUrl: row.photo_url || "",
+    videoUrl: row.video_url || "",
+    date: row.created_at ? String(row.created_at).slice(0, 10) : "",
+    visible: row.is_visible !== false,
+    isDemo: false,
+  };
+}
+
+function reviewToRow(r) {
+  return {
+    first_name: r.firstName,
+    rating: r.rating,
+    comment: r.comment,
+    photo_url: r.photoUrl || null,
+    video_url: r.videoUrl || null,
+    is_visible: r.visible !== false,
+  };
+}
+
+async function loadReviewsFromSupabase() {
+  const client = await getSupabaseAuthClient();
+  const { data, error } = await client
+    .from("reviews")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(rowToReview);
+}
+
 function makeProduct(id, name, brandId, categoryId, ref, seedBase, opts = {}) {
   const nPhotos = opts.photos || 4;
   return {
@@ -2060,73 +2114,15 @@ function CollectionsPage({ products, brands, onOpen, go, setCategoryFilter }) {
 /* ============================================================
    AVIS CLIENTS + AVIS VIDÉO
    ------------------------------------------------------------
-   ⚠️ DONNÉES DE DÉMONSTRATION UNIQUEMENT — ces avis et vidéos sont
-   des exemples fictifs utilisés pour tester l'affichage. Ils devront
-   être remplacés par de vrais avis clients avant mise en ligne.
+   Avis clients : persistés dans Supabase (table "reviews") — voir
+   rowToReview / reviewToRow / loadReviewsFromSupabase plus haut.
 
-   Persistance : ces données vivent pour l'instant en mémoire React
-   (state de l'App), gérables depuis l'admin. Rien n'est encore
-   enregistré dans Supabase — voir la proposition de table "reviews"
-   fournie séparément avant toute création de table.
+   Avis vidéo : ⚠️ DONNÉES DE DÉMONSTRATION UNIQUEMENT — aucune table
+   Supabase n'a été créée pour les vidéos. Ces témoignages fictifs
+   servent à tester l'affichage et vivent en mémoire (state de l'App),
+   gérables depuis l'admin. À remplacer par de vrais témoignages, ou
+   à brancher sur Supabase sur le même modèle que "reviews" si besoin.
    ============================================================ */
-
-const DEMO_REVIEWS = [
-  {
-    id: "demo-r1",
-    firstName: "Thomas",
-    rating: 5,
-    comment: "Une expérience incroyable, produit conforme aux photos et livraison rapide. Je recommande sans hésiter.",
-    date: "2026-06-02",
-    photoUrl: "",
-    videoUrl: "",
-    visible: true,
-    isDemo: true,
-  },
-  {
-    id: "demo-r2",
-    firstName: "Léa",
-    rating: 5,
-    comment: "Service client très réactif sur WhatsApp, la casquette est encore plus belle en vrai. Parfait pour un cadeau.",
-    date: "2026-05-18",
-    photoUrl: "",
-    videoUrl: "",
-    visible: true,
-    isDemo: true,
-  },
-  {
-    id: "demo-r3",
-    firstName: "Karim",
-    rating: 4,
-    comment: "Très belle sélection de marques, la remise en main propre sur Paris m'a fait gagner du temps.",
-    date: "2026-05-03",
-    photoUrl: "",
-    videoUrl: "",
-    visible: true,
-    isDemo: true,
-  },
-  {
-    id: "demo-r4",
-    firstName: "Inès",
-    rating: 5,
-    comment: "Qualité au rendez-vous, l'emballage est soigné et la référence produit correspondait exactement à ma commande.",
-    date: "2026-04-21",
-    photoUrl: "",
-    videoUrl: "",
-    visible: true,
-    isDemo: true,
-  },
-  {
-    id: "demo-r5",
-    firstName: "Nicolas",
-    rating: 5,
-    comment: "Deuxième commande chez eux, toujours aussi fiable. Le suivi de commande via WhatsApp est très pratique.",
-    date: "2026-04-09",
-    photoUrl: "",
-    videoUrl: "",
-    visible: true,
-    isDemo: true,
-  },
-];
 
 const DEMO_VIDEO_TESTIMONIALS = [
   {
@@ -2642,7 +2638,7 @@ function AdminLogin({ onSignedIn }) {
   );
 }
 
-function AdminDashboard({ products, setProducts, brands, setBrands, categories, setCategories, saveStatus, onSignOut, onReloadProducts, productsLoading, productsError, onReloadBrands, brandsLoading, brandsError, reviews, setReviews, videoTestimonials, setVideoTestimonials }) {
+function AdminDashboard({ products, setProducts, brands, setBrands, categories, setCategories, saveStatus, onSignOut, onReloadProducts, productsLoading, productsError, onReloadBrands, brandsLoading, brandsError, reviews, setReviews, onReloadReviews, reviewsLoading, reviewsError, videoTestimonials, setVideoTestimonials }) {
   const [tab, setTab] = useState("products");
   const [editing, setEditing] = useState(null);
   const [editingBrand, setEditingBrand] = useState(null);
@@ -2672,6 +2668,11 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
   const [savingBrand, setSavingBrand] = useState(false);
   const [deleteErrorBrand, setDeleteErrorBrand] = useState("");
   const [confirmDeleteBrand, setConfirmDeleteBrand] = useState(null);
+
+  const [saveErrorReview, setSaveErrorReview] = useState("");
+  const [savingReview, setSavingReview] = useState(false);
+  const [deleteErrorReview, setDeleteErrorReview] = useState("");
+  const [confirmDeleteReview, setConfirmDeleteReview] = useState(null);
 
   const saveProduct = async () => {
     if (!editing.name || !editing.brandId || !editing.categoryId || !editing.reference) return;
@@ -2905,20 +2906,88 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
   };
   const deleteCategory = (id) => setCategories((prev) => prev.filter((c) => c.id !== id));
 
-  /* ----- Avis clients — en mémoire uniquement (pas de table Supabase pour l'instant) ----- */
-  const saveReview = () => {
+  /* ----- Avis clients : source de vérité = Supabase (table "reviews") -----
+     Même logique que saveBrand/deleteBrand. */
+  const saveReview = async () => {
     if (!editingReview.firstName || !editingReview.comment || !editingReview.rating) return;
-    if (editingReview.id) {
-      setReviews((prev) => prev.map((r) => (r.id === editingReview.id ? { ...editingReview, isDemo: false } : r)));
-    } else {
-      setReviews((prev) => [...prev, { ...editingReview, id: "review-" + Date.now(), isDemo: false }]);
+    setSaveErrorReview("");
+    try {
+      await requireAdmin();
+    } catch (err) {
+      setSaveErrorReview(err && err.message ? err.message : String(err));
+      return;
     }
+
+    setSavingReview(true);
+    try {
+      const client = await getSupabaseAuthClient();
+      const row = reviewToRow(editingReview);
+      if (editingReview.id) {
+        const { error } = await client.from("reviews").update(row).eq("id", editingReview.id);
+        if (error) throw error;
+      } else {
+        const { error } = await client.from("reviews").insert(row);
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.error("Enregistrement avis échoué:", err);
+      setSaveErrorReview(
+        "Impossible d'enregistrer l'avis. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+      setSavingReview(false);
+      return; // le formulaire "editingReview" est conservé, rien n'est perdu
+    }
+
+    if (onReloadReviews) {
+      await onReloadReviews();
+    }
+    setSavingReview(false);
     setEditingReview(null);
   };
-  const deleteReview = (id) => setReviews((prev) => prev.filter((r) => r.id !== id));
-  const toggleReviewVisibility = (id) => setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, visible: !r.visible } : r)));
 
-  /* ----- Avis vidéo — en mémoire uniquement, jamais d'hébergement de fichier : uniquement une URL ----- */
+  const deleteReview = async (id) => {
+    setDeleteErrorReview("");
+    try {
+      await requireAdmin();
+      const client = await getSupabaseAuthClient();
+      const { error } = await client.from("reviews").delete().eq("id", id);
+      if (error) throw error;
+      if (onReloadReviews) {
+        await onReloadReviews();
+      }
+      setConfirmDeleteReview(null);
+    } catch (err) {
+      console.error("Suppression avis échouée:", err && err.message ? err.message : err);
+      setDeleteErrorReview(
+        "Impossible de supprimer l'avis. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+      // on laisse confirmDeleteReview ouvert pour que l'admin voie l'erreur
+    }
+  };
+
+  const toggleReviewVisibility = async (review) => {
+    try {
+      await requireAdmin();
+      const client = await getSupabaseAuthClient();
+      const { error } = await client.from("reviews").update({ is_visible: !review.visible }).eq("id", review.id);
+      if (error) throw error;
+      if (onReloadReviews) {
+        await onReloadReviews();
+      }
+    } catch (err) {
+      console.error("Mise à jour de la visibilité de l'avis échouée:", err && err.message ? err.message : err);
+      setSaveErrorReview(
+        "Impossible de mettre à jour la visibilité. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+    }
+  };
+
+  /* ----- Avis vidéo — en mémoire uniquement, jamais d'hébergement de fichier : uniquement une URL.
+     Aucune table Supabase n'a été demandée pour les vidéos ; à créer sur le même modèle que
+     "reviews" si vous le souhaitez plus tard. ----- */
   const saveVideoTestimonial = () => {
     if (!editingVideoTestimonial.firstName) return;
     if (editingVideoTestimonial.id) {
@@ -3371,13 +3440,21 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
       {tab === "reviews" && !editingReview && !editingVideoTestimonial && (
         <div>
           <div className="mb-3 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: COLORS.goldDim, fontFamily: "Inter" }}>
-            ⚠ Les avis et vidéos sont pour l'instant stockés en mémoire (le temps de la session en cours), en attendant la création éventuelle d'une table Supabase dédiée. Ils ne persistent pas encore après un rechargement de page.
+            ⚠ Les avis clients sont enregistrés dans Supabase (table "reviews") et persistent après actualisation. Les avis vidéo restent pour l'instant en mémoire, le temps de la session en cours (aucune table Supabase créée pour eux).
           </div>
 
           <div className="flex items-center justify-between mb-3 mt-6">
             <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>AVIS CLIENTS</div>
             <SolidButton onClick={() => setEditingReview({ id: null, firstName: "", rating: 5, comment: "", date: "", photoUrl: "", videoUrl: "", visible: true })}>+ Ajouter un avis</SolidButton>
           </div>
+          {reviewsError && (
+            <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+              {reviewsError}
+            </div>
+          )}
+          {reviewsLoading && (
+            <p className="text-xs mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Chargement des avis depuis Supabase…</p>
+          )}
           <div className="grid sm:grid-cols-2 gap-4 mb-10">
             {reviews.map((r) => (
               <div key={r.id} className="p-4 rounded-sm border" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
@@ -3389,15 +3466,15 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
                 <p className="text-xs mt-1 line-clamp-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{r.comment}</p>
                 <div className="flex gap-3 mt-3 items-center">
                   <button onClick={() => setEditingReview(r)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta }}>Modifier</button>
-                  <button onClick={() => toggleReviewVisibility(r.id)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim }}>
+                  <button onClick={() => toggleReviewVisibility(r)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim }}>
                     {r.visible ? "Masquer" : "Afficher"}
                   </button>
-                  <button onClick={() => deleteReview(r.id)} className="text-xs uppercase tracking-widest" style={{ color: "#FF5C7A" }}>Supprimer</button>
+                  <button onClick={() => setConfirmDeleteReview(r.id)} className="text-xs uppercase tracking-widest" style={{ color: "#FF5C7A" }}>Supprimer</button>
                 </div>
               </div>
             ))}
-            {reviews.length === 0 && (
-              <p className="text-xs" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucun avis pour le moment.</p>
+            {!reviewsLoading && reviews.length === 0 && !reviewsError && (
+              <p className="text-xs" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucun avis dans Supabase pour le moment.</p>
             )}
           </div>
 
@@ -3453,8 +3530,13 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
             <input type="checkbox" checked={editingReview.visible} onChange={(e) => setEditingReview({ ...editingReview, visible: e.target.checked })} /> Afficher sur le site
           </label>
 
+          {saveErrorReview && (
+            <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+              {saveErrorReview}
+            </div>
+          )}
           <div className="flex gap-3">
-            <SolidButton onClick={saveReview}>Enregistrer</SolidButton>
+            <SolidButton onClick={saveReview}>{savingReview ? "Enregistrement…" : "Enregistrer"}</SolidButton>
             <GhostButton onClick={() => setEditingReview(null)}>Annuler</GhostButton>
           </div>
         </div>
@@ -3514,6 +3596,24 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
             <div className="flex gap-3">
               <SolidButton onClick={() => deleteBrand(confirmDeleteBrand)}>Supprimer</SolidButton>
               <GhostButton onClick={() => { setConfirmDeleteBrand(null); setDeleteErrorBrand(""); }}>Annuler</GhostButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteReview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.7)" }}>
+          <div className="max-w-sm w-full p-6 rounded-sm neon-border" style={{ background: COLORS.surface }}>
+            <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>SUPPRIMER CET AVIS ?</div>
+            <p className="text-sm mt-2 mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Cette action est irréversible : l'avis sera supprimé de Supabase.</p>
+            {deleteErrorReview && (
+              <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+                {deleteErrorReview}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <SolidButton onClick={() => deleteReview(confirmDeleteReview)}>Supprimer</SolidButton>
+              <GhostButton onClick={() => { setConfirmDeleteReview(null); setDeleteErrorReview(""); }}>Annuler</GhostButton>
             </div>
           </div>
         </div>
@@ -3776,10 +3876,13 @@ function App() {
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [brandsError, setBrandsError] = useState("");
   const [categories, setCategories] = useState(CATEGORIES);
-  // Avis clients + avis vidéo — état local en attendant la création éventuelle
-  // d'une table Supabase "reviews" (voir proposition fournie séparément).
-  // Initialisés avec des données de DÉMONSTRATION (voir isDemo: true).
-  const [reviews, setReviews] = useState(DEMO_REVIEWS);
+  // Avis clients — source de vérité = Supabase (table "reviews"), même
+  // logique que products/brands : on démarre à vide et on charge au montage.
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewsError, setReviewsError] = useState("");
+  // Avis vidéo — pas de table Supabase créée pour l'instant (non demandée) :
+  // reste en mémoire, initialisé avec des données de DÉMONSTRATION (isDemo: true).
   const [videoTestimonials, setVideoTestimonials] = useState(DEMO_VIDEO_TESTIMONIALS);
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -3907,9 +4010,28 @@ function App() {
     }
   };
 
+  /* ----- Avis clients : source de vérité = Supabase (table "reviews") -----
+     Même logique que pour les marques : en cas d'échec réseau/RLS, on
+     conserve la liste actuellement affichée et on stocke l'erreur dans
+     reviewsError plutôt que de vider la liste. */
+  const reloadReviews = async () => {
+    setReviewsError("");
+    try {
+      const fresh = await loadReviewsFromSupabase();
+      setReviews(fresh);
+    } catch (err) {
+      console.error("Chargement des avis depuis Supabase échoué:", err);
+      setReviewsError(
+        "Impossible de charger les avis depuis Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+    }
+  };
+
   useEffect(() => {
     reloadProducts().finally(() => { setProductsLoading(false); setLoaded(true); });
     reloadBrands().finally(() => { setBrandsLoading(false); });
+    reloadReviews().finally(() => { setReviewsLoading(false); });
   }, []);
 
   /* ----- Catégories : encore en localStorage pour l'instant -----
@@ -4178,6 +4300,9 @@ function App() {
           brandsLoading={brandsLoading}
           brandsError={brandsError}
           reviews={reviews} setReviews={setReviews}
+          onReloadReviews={reloadReviews}
+          reviewsLoading={reviewsLoading}
+          reviewsError={reviewsError}
           videoTestimonials={videoTestimonials} setVideoTestimonials={setVideoTestimonials}
         />
       )}
