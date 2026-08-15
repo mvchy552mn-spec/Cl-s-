@@ -822,6 +822,7 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
   }, [open]);
 
   return (
+    <>
     <header
       className="sticky top-0 z-40 border-b relative"
       style={{ background: "rgba(8,6,13,0.92)", backdropFilter: "blur(10px)", borderColor: COLORS.line }}
@@ -986,8 +987,13 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
           )}
         </div>
       </div>
+    </header>
 
-      {/* Menu mobile — navigation plein écran, hiérarchique : catégorie → marques → catalogue filtré */}
+      {/* Menu mobile — navigation plein écran, hiérarchique : catégorie → marques → catalogue filtré
+          Rendu HORS du <header> : le header a un backdropFilter (flou), qui crée un containing block
+          CSS pour tout descendant en position fixed — un overlay fixed à l'intérieur resterait donc
+          coincé dans la hauteur du bandeau du header au lieu de couvrir tout l'écran. En le sortant
+          comme frère du header, "fixed" redevient relatif au viewport, comme attendu sur mobile. */}
       {open && (
         <div
           className="lg:hidden fixed inset-0 z-50 flex flex-col"
@@ -1119,7 +1125,7 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
           </div>
         </div>
       )}
-    </header>
+    </>
   );
 }
 
