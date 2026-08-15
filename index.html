@@ -536,6 +536,47 @@ async function loadReviewsFromSupabase() {
   return (data || []).map(rowToReview);
 }
 
+/* ============================================================
+   SUPABASE — table "video_testimonials" (persistance réelle des avis vidéo)
+   ------------------------------------------------------------
+   Même logique que pour "reviews" : conversion row <-> objet React,
+   + helper de chargement de la liste complète depuis Supabase.
+
+   Colonnes attendues : id (uuid), first_name (text), video_url (text,
+   nullable), is_visible (boolean), created_at (timestamptz).
+
+   Aucun fichier vidéo n'est téléchargé ni hébergé : seule l'URL externe
+   (TikTok/Instagram/YouTube…) renseignée par l'admin est enregistrée.
+   ============================================================ */
+
+function rowToVideoTestimonial(row) {
+  return {
+    id: row.id,
+    firstName: row.first_name,
+    videoUrl: row.video_url || "",
+    visible: row.is_visible !== false,
+    isDemo: false,
+  };
+}
+
+function videoTestimonialToRow(v) {
+  return {
+    first_name: v.firstName,
+    video_url: v.videoUrl || null,
+    is_visible: v.visible !== false,
+  };
+}
+
+async function loadVideoTestimonialsFromSupabase() {
+  const client = await getSupabaseAuthClient();
+  const { data, error } = await client
+    .from("video_testimonials")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(rowToVideoTestimonial);
+}
+
 function makeProduct(id, name, brandId, categoryId, ref, seedBase, opts = {}) {
   const nPhotos = opts.photos || 4;
   return {
@@ -2276,11 +2317,12 @@ function CollectionsPage({ products, brands, onOpen, go, setCategoryFilter }) {
    Avis clients : persistés dans Supabase (table "reviews") — voir
    rowToReview / reviewToRow / loadReviewsFromSupabase plus haut.
 
-   Avis vidéo : ⚠️ DONNÉES DE DÉMONSTRATION UNIQUEMENT — aucune table
-   Supabase n'a été créée pour les vidéos. Ces témoignages fictifs
-   servent à tester l'affichage et vivent en mémoire (state de l'App),
-   gérables depuis l'admin. À remplacer par de vrais témoignages, ou
-   à brancher sur Supabase sur le même modèle que "reviews" si besoin.
+   Avis vidéo : persistés dans Supabase (table "video_testimonials") —
+   voir rowToVideoTestimonial / videoTestimonialToRow /
+   loadVideoTestimonialsFromSupabase plus haut, même logique que pour
+   "reviews". DEMO_VIDEO_TESTIMONIALS ci-dessous n'est plus utilisé comme
+   état initial (voir App) : conservé tel quel au cas où il serait
+   référencé ailleurs, mais n'a plus aucun effet sur l'affichage.
    ============================================================ */
 
 const DEMO_VIDEO_TESTIMONIALS = [
@@ -2797,7 +2839,7 @@ function AdminLogin({ onSignedIn }) {
   );
 }
 
-function AdminDashboard({ products, setProducts, brands, setBrands, categories, setCategories, saveStatus, onSignOut, onReloadProducts, productsLoading, productsError, onReloadBrands, brandsLoading, brandsError, reviews, setReviews, onReloadReviews, reviewsLoading, reviewsError, videoTestimonials, setVideoTestimonials }) {
+function AdminDashboard({ products, setProducts, brands, setBrands, categories, setCategories, saveStatus, onSignOut, onReloadProducts, productsLoading, productsError, onReloadBrands, brandsLoading, brandsError, reviews, setReviews, onReloadReviews, reviewsLoading, reviewsError, videoTestimonials, setVideoTestimonials, onReloadVideoTestimonials, videoTestimonialsLoading, videoTestimonialsError }) {
   const [tab, setTab] = useState("products");
   const [editing, setEditing] = useState(null);
   const [editingBrand, setEditingBrand] = useState(null);
@@ -2832,6 +2874,11 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
   const [savingReview, setSavingReview] = useState(false);
   const [deleteErrorReview, setDeleteErrorReview] = useState("");
   const [confirmDeleteReview, setConfirmDeleteReview] = useState(null);
+
+  const [saveErrorVideo, setSaveErrorVideo] = useState("");
+  const [savingVideo, setSavingVideo] = useState(false);
+  const [deleteErrorVideo, setDeleteErrorVideo] = useState("");
+  const [confirmDeleteVideo, setConfirmDeleteVideo] = useState(null);
 
   const saveProduct = async () => {
     if (!editing.name || !editing.brandId || !editing.categoryId || !editing.reference) return;
@@ -3144,20 +3191,84 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
     }
   };
 
-  /* ----- Avis vidéo — en mémoire uniquement, jamais d'hébergement de fichier : uniquement une URL.
-     Aucune table Supabase n'a été demandée pour les vidéos ; à créer sur le même modèle que
-     "reviews" si vous le souhaitez plus tard. ----- */
-  const saveVideoTestimonial = () => {
+  /* ----- Avis vidéo : source de vérité = Supabase (table "video_testimonials") -----
+     Même logique que saveReview/deleteReview/toggleReviewVisibility. */
+  const saveVideoTestimonial = async () => {
     if (!editingVideoTestimonial.firstName) return;
-    if (editingVideoTestimonial.id) {
-      setVideoTestimonials((prev) => prev.map((v) => (v.id === editingVideoTestimonial.id ? { ...editingVideoTestimonial, isDemo: false } : v)));
-    } else {
-      setVideoTestimonials((prev) => [...prev, { ...editingVideoTestimonial, id: "video-" + Date.now(), isDemo: false }]);
+    setSaveErrorVideo("");
+    try {
+      await requireAdmin();
+    } catch (err) {
+      setSaveErrorVideo(err && err.message ? err.message : String(err));
+      return;
     }
+
+    setSavingVideo(true);
+    try {
+      const client = await getSupabaseAuthClient();
+      const row = videoTestimonialToRow(editingVideoTestimonial);
+      if (editingVideoTestimonial.id) {
+        const { error } = await client.from("video_testimonials").update(row).eq("id", editingVideoTestimonial.id);
+        if (error) throw error;
+      } else {
+        const { error } = await client.from("video_testimonials").insert(row);
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.error("Enregistrement avis vidéo échoué:", err);
+      setSaveErrorVideo(
+        "Impossible d'enregistrer l'avis vidéo. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+      setSavingVideo(false);
+      return; // le formulaire "editingVideoTestimonial" est conservé, rien n'est perdu
+    }
+
+    if (onReloadVideoTestimonials) {
+      await onReloadVideoTestimonials();
+    }
+    setSavingVideo(false);
     setEditingVideoTestimonial(null);
   };
-  const deleteVideoTestimonial = (id) => setVideoTestimonials((prev) => prev.filter((v) => v.id !== id));
-  const toggleVideoVisibility = (id) => setVideoTestimonials((prev) => prev.map((v) => (v.id === id ? { ...v, visible: !v.visible } : v)));
+
+  const deleteVideoTestimonial = async (id) => {
+    setDeleteErrorVideo("");
+    try {
+      await requireAdmin();
+      const client = await getSupabaseAuthClient();
+      const { error } = await client.from("video_testimonials").delete().eq("id", id);
+      if (error) throw error;
+      if (onReloadVideoTestimonials) {
+        await onReloadVideoTestimonials();
+      }
+      setConfirmDeleteVideo(null);
+    } catch (err) {
+      console.error("Suppression avis vidéo échouée:", err && err.message ? err.message : err);
+      setDeleteErrorVideo(
+        "Impossible de supprimer l'avis vidéo. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+      // on laisse confirmDeleteVideo ouvert pour que l'admin voie l'erreur
+    }
+  };
+
+  const toggleVideoVisibility = async (video) => {
+    try {
+      await requireAdmin();
+      const client = await getSupabaseAuthClient();
+      const { error } = await client.from("video_testimonials").update({ is_visible: !video.visible }).eq("id", video.id);
+      if (error) throw error;
+      if (onReloadVideoTestimonials) {
+        await onReloadVideoTestimonials();
+      }
+    } catch (err) {
+      console.error("Mise à jour de la visibilité de l'avis vidéo échouée:", err && err.message ? err.message : err);
+      setSaveErrorVideo(
+        "Impossible de mettre à jour la visibilité. Erreur Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+    }
+  };
 
   return (
     <section className="max-w-7xl mx-auto px-5 md:px-8 py-10">
@@ -3599,7 +3710,7 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
       {tab === "reviews" && !editingReview && !editingVideoTestimonial && (
         <div>
           <div className="mb-3 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: COLORS.goldDim, fontFamily: "Inter" }}>
-            ⚠ Les avis clients sont enregistrés dans Supabase (table "reviews") et persistent après actualisation. Les avis vidéo restent pour l'instant en mémoire, le temps de la session en cours (aucune table Supabase créée pour eux).
+            ⚠ Les avis clients et les avis vidéo sont tous deux enregistrés dans Supabase (tables "reviews" et "video_testimonials") et persistent après actualisation.
           </div>
 
           <div className="flex items-center justify-between mb-3 mt-6">
@@ -3641,6 +3752,14 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
             <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>AVIS VIDÉO</div>
             <SolidButton onClick={() => setEditingVideoTestimonial({ id: null, firstName: "", videoUrl: "", visible: true })}>+ Ajouter une vidéo</SolidButton>
           </div>
+          {videoTestimonialsError && (
+            <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+              {videoTestimonialsError}
+            </div>
+          )}
+          {videoTestimonialsLoading && (
+            <p className="text-xs mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Chargement des avis vidéo depuis Supabase…</p>
+          )}
           <div className="grid sm:grid-cols-2 gap-4">
             {videoTestimonials.map((v) => (
               <div key={v.id} className="p-4 rounded-sm border" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
@@ -3651,15 +3770,15 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
                 <p className="text-xs mt-1 break-all" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{v.videoUrl || "Aucune URL renseignée"}</p>
                 <div className="flex gap-3 mt-3 items-center">
                   <button onClick={() => setEditingVideoTestimonial(v)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.magenta }}>Modifier</button>
-                  <button onClick={() => toggleVideoVisibility(v.id)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim }}>
+                  <button onClick={() => toggleVideoVisibility(v)} className="text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim }}>
                     {v.visible ? "Masquer" : "Afficher"}
                   </button>
-                  <button onClick={() => deleteVideoTestimonial(v.id)} className="text-xs uppercase tracking-widest" style={{ color: "#FF5C7A" }}>Supprimer</button>
+                  <button onClick={() => setConfirmDeleteVideo(v.id)} className="text-xs uppercase tracking-widest" style={{ color: "#FF5C7A" }}>Supprimer</button>
                 </div>
               </div>
             ))}
-            {videoTestimonials.length === 0 && (
-              <p className="text-xs" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucune vidéo pour le moment.</p>
+            {!videoTestimonialsLoading && videoTestimonials.length === 0 && !videoTestimonialsError && (
+              <p className="text-xs" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucun avis vidéo dans Supabase pour le moment.</p>
             )}
           </div>
         </div>
@@ -3717,8 +3836,13 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
             <input type="checkbox" checked={editingVideoTestimonial.visible} onChange={(e) => setEditingVideoTestimonial({ ...editingVideoTestimonial, visible: e.target.checked })} /> Afficher sur le site
           </label>
 
+          {saveErrorVideo && (
+            <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+              {saveErrorVideo}
+            </div>
+          )}
           <div className="flex gap-3">
-            <SolidButton onClick={saveVideoTestimonial}>Enregistrer</SolidButton>
+            <SolidButton onClick={saveVideoTestimonial}>{savingVideo ? "Enregistrement…" : "Enregistrer"}</SolidButton>
             <GhostButton onClick={() => setEditingVideoTestimonial(null)}>Annuler</GhostButton>
           </div>
         </div>
@@ -3773,6 +3897,24 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
             <div className="flex gap-3">
               <SolidButton onClick={() => deleteReview(confirmDeleteReview)}>Supprimer</SolidButton>
               <GhostButton onClick={() => { setConfirmDeleteReview(null); setDeleteErrorReview(""); }}>Annuler</GhostButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteVideo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,0.7)" }}>
+          <div className="max-w-sm w-full p-6 rounded-sm neon-border" style={{ background: COLORS.surface }}>
+            <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>SUPPRIMER CET AVIS VIDÉO ?</div>
+            <p className="text-sm mt-2 mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Cette action est irréversible : l'avis vidéo sera supprimé de Supabase.</p>
+            {deleteErrorVideo && (
+              <div className="mb-4 text-xs px-3 py-2 rounded-sm" style={{ background: COLORS.surface2, color: "#FF5C7A", fontFamily: "Inter" }}>
+                {deleteErrorVideo}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <SolidButton onClick={() => deleteVideoTestimonial(confirmDeleteVideo)}>Supprimer</SolidButton>
+              <GhostButton onClick={() => { setConfirmDeleteVideo(null); setDeleteErrorVideo(""); }}>Annuler</GhostButton>
             </div>
           </div>
         </div>
@@ -4040,9 +4182,12 @@ function App() {
   const [reviews, setReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewsError, setReviewsError] = useState("");
-  // Avis vidéo — pas de table Supabase créée pour l'instant (non demandée) :
-  // reste en mémoire, initialisé avec des données de DÉMONSTRATION (isDemo: true).
-  const [videoTestimonials, setVideoTestimonials] = useState(DEMO_VIDEO_TESTIMONIALS);
+  // Avis vidéo — source de vérité = Supabase (table "video_testimonials"),
+  // même logique que products/brands/reviews : on démarre à vide et on
+  // charge au montage.
+  const [videoTestimonials, setVideoTestimonials] = useState([]);
+  const [videoTestimonialsLoading, setVideoTestimonialsLoading] = useState(true);
+  const [videoTestimonialsError, setVideoTestimonialsError] = useState("");
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [brandFilter, setBrandFilter] = useState("all");
@@ -4188,10 +4333,29 @@ function App() {
     }
   };
 
+  /* ----- Avis vidéo : source de vérité = Supabase (table "video_testimonials") -----
+     Même logique que pour les avis clients : en cas d'échec réseau/RLS, on
+     conserve la liste actuellement affichée et on stocke l'erreur dans
+     videoTestimonialsError plutôt que de vider la liste. */
+  const reloadVideoTestimonials = async () => {
+    setVideoTestimonialsError("");
+    try {
+      const fresh = await loadVideoTestimonialsFromSupabase();
+      setVideoTestimonials(fresh);
+    } catch (err) {
+      console.error("Chargement des avis vidéo depuis Supabase échoué:", err);
+      setVideoTestimonialsError(
+        "Impossible de charger les avis vidéo depuis Supabase : " +
+          (err && err.message ? err.message : String(err))
+      );
+    }
+  };
+
   useEffect(() => {
     reloadProducts().finally(() => { setProductsLoading(false); setLoaded(true); });
     reloadBrands().finally(() => { setBrandsLoading(false); });
     reloadReviews().finally(() => { setReviewsLoading(false); });
+    reloadVideoTestimonials().finally(() => { setVideoTestimonialsLoading(false); });
   }, []);
 
   /* ----- Catégories : encore en localStorage pour l'instant -----
@@ -4492,6 +4656,9 @@ function App() {
           reviewsLoading={reviewsLoading}
           reviewsError={reviewsError}
           videoTestimonials={videoTestimonials} setVideoTestimonials={setVideoTestimonials}
+          onReloadVideoTestimonials={reloadVideoTestimonials}
+          videoTestimonialsLoading={videoTestimonialsLoading}
+          videoTestimonialsError={videoTestimonialsError}
         />
       )}
 
