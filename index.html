@@ -62,11 +62,75 @@ const LOGO_SRC = "data:image/webp;base64,UklGRtTWAQBXRUJQVlA4WAoAAAAQAAAAgwMAfAI
 const CATEGORIES = [
   { id: "chaussures", name: "Chaussures", tag: "01", desc: "Sneakers & silhouettes signature" },
   { id: "vetements", name: "Vêtements", tag: "02", desc: "Prêt-à-porter urbain premium" },
-  { id: "sacs", name: "Sacs", tag: "03", desc: "Maroquinerie & pièces du quotidien" },
+  { id: "sacs", name: "Sacs / Sacoche", tag: "03", desc: "Maroquinerie & pièces du quotidien" },
   { id: "accessoires", name: "Accessoires", tag: "04", desc: "Détails qui font la différence" },
   { id: "casquettes", name: "Casquettes", tag: "05", desc: "Headwear signature" },
   { id: "montres", name: "Montres", tag: "06", desc: "Horlogerie contemporaine" },
 ];
+
+/* ============================================================
+   CATALOG_TREE — hiérarchie des sous-catégories du catalogue
+   ------------------------------------------------------------
+   Navigation : Catalogue → Catégorie → Homme/Femme → Sous-catégorie → Produits
+
+   Une catégorie absente de cet objet (ex : "accessoires", "montres")
+   conserve son comportement d'origine (pas de niveau Genre/Sous-catégorie,
+   navigation directe vers les marques) — voir consigne "NE PAS MODIFIER
+   CETTE CATÉGORIE" pour Accessoires.
+
+   Pour ajouter une nouvelle catégorie ou sous-catégorie plus tard, il
+   suffit d'éditer cet objet : tout le reste (menu desktop, menu mobile,
+   filtres catalogue, formulaire admin) s'adapte automatiquement.
+
+   Format :
+   - catégorie avec Homme/Femme  : { homme: [...sous-catégories], femme: [...sous-catégories] }
+   - catégorie unisexe (1 seul niveau de sous-catégorie, ex Casquettes) : { unisexe: [...sous-catégories] }
+   ============================================================ */
+const CATALOG_TREE = {
+  chaussures: {
+    homme: ["Baskets", "Claquettes", "Mocassins", "Chaussures", "Bottes", "Sandales"],
+    femme: ["Baskets", "Claquettes", "Mocassins", "Chaussures", "Bottes", "Sandales", "Talons"],
+  },
+  vetements: {
+    homme: ["Vestes / Doudounes", "Survêtements", "T-Shirts", "Sweats / Hoodies", "Pulls", "Pantalons", "Shorts"],
+    femme: ["Vestes / Doudounes", "Survêtements", "T-Shirts", "Sweats / Hoodies", "Pulls", "Pantalons", "Shorts", "Robes"],
+  },
+  sacs: {
+    homme: ["Sacoches", "Sacs à dos", "Sacs de voyage", "Sacs bandoulière"],
+    femme: ["Sacs à main", "Sacs bandoulière", "Sacs à dos", "Sacs de voyage", "Pochettes"],
+  },
+  casquettes: {
+    unisexe: ["Casquettes", "Chapeaux", "Bonnets"],
+  },
+};
+
+const GENDER_LABELS = { homme: "Homme", femme: "Femme" };
+
+/* Genres disponibles pour une catégorie ("homme"/"femme"), ou [] si la
+   catégorie n'a pas de niveau Genre (pas de tree, ou tree "unisexe"). */
+function gendersForCategory(catId) {
+  const tree = CATALOG_TREE[catId];
+  if (!tree || tree.unisexe) return [];
+  return Object.keys(tree).filter((k) => k === "homme" || k === "femme");
+}
+
+/* Sous-catégories pour une catégorie + un genre donné ("homme"/"femme"),
+   ou la liste unisexe si la catégorie n'a pas de Genre. */
+function subcatsForCategory(catId, gender) {
+  const tree = CATALOG_TREE[catId];
+  if (!tree) return [];
+  if (tree.unisexe) return tree.unisexe;
+  return tree[gender] || [];
+}
+
+/* Toutes les sous-catégories d'une catégorie, tous genres confondus
+   (utilisé quand le filtre Genre est sur "Tous"). */
+function allSubcatsForCategory(catId) {
+  const tree = CATALOG_TREE[catId];
+  if (!tree) return [];
+  if (tree.unisexe) return tree.unisexe;
+  return Array.from(new Set([...(tree.homme || []), ...(tree.femme || [])]));
+}
 
 const BRANDS = [
   { id: "novare-originals", name: "Novare Originals", description: "La ligne cœur de Luxury Streetwear — silhouettes signature et pièces intemporelles." },
@@ -564,6 +628,8 @@ function rowToProduct(row) {
     name: row.name,
     brandId: row.brand_id,
     categoryId: row.category_id,
+    gender: row.gender || "",
+    subcategory: row.sub_category || "",
     reference: row.reference,
     description: row.description || "",
     images: row.images || [],
@@ -580,6 +646,8 @@ function productToRow(p) {
     name: p.name,
     brand_id: p.brandId,
     category_id: p.categoryId,
+    gender: p.gender || null,
+    sub_category: p.subcategory || null,
     reference: p.reference,
     description: p.description || "",
     images: p.images || [],
@@ -939,11 +1007,16 @@ function SolidButton({ children, onClick, className = "" }) {
 
 /* ---------------- Header ---------------- */
 
-function Header({ route, go, cartCount, categories, brands, products, setCategoryFilter, setBrandFilter, setSelectedBrandId, onOpenCart }) {
+function Header({ route, go, cartCount, categories, brands, products, setCategoryFilter, setBrandFilter, setSelectedBrandId, setGenderFilter, setSubcategoryFilter, onOpenCart }) {
   const [open, setOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState(null); // "categories" | "brands" | null (desktop mega-menu)
   const [hoveredCategory, setHoveredCategory] = useState(null); // desktop mega-menu : catégorie survolée
-  const [mobileLevel, setMobileLevel] = useState(null); // null = niveau 1 (racine) | { id, name } = niveau 2 (marques de la catégorie)
+  const [hoveredGender, setHoveredGender] = useState(null); // desktop mega-menu : Homme/Femme survolé
+  // mobileLevel : null = niveau 1 (racine)
+  //   { id, name, step: "brands" }             -> catégorie sans sous-catégories (ex : Accessoires, Montres) : liste de marques (comportement d'origine)
+  //   { id, name, step: "gender" }              -> catégorie avec Homme/Femme : choix du genre
+  //   { id, name, step: "subcats", gender }     -> liste des sous-catégories (gender = null si catégorie unisexe, ex : Casquettes)
+  const [mobileLevel, setMobileLevel] = useState(null);
   const closeTimer = useRef(null);
 
   const CATS = categories && categories.length ? categories : CATEGORIES;
@@ -954,7 +1027,6 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
     { route: "home", label: "Accueil" },
     { route: "catalog", label: "Catalogue", dropdown: "categories" },
     { route: "catalog-new", label: "Nouveautés" },
-    { route: "collections", label: "Collections" },
     { route: "brands", label: "Marques", dropdown: "brands" },
     { route: "contact", label: "Contact" },
   ];
@@ -981,6 +1053,8 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
   const goCategory = (catId) => {
     setCategoryFilter(catId);
     setBrandFilter("all");
+    setGenderFilter("all");
+    setSubcategoryFilter("all");
     go("catalog");
     setOpenMenu(null);
     setOpen(false);
@@ -989,6 +1063,19 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
   const goCategoryBrand = (catId, brandId) => {
     setCategoryFilter(catId);
     setBrandFilter(brandId);
+    setGenderFilter("all");
+    setSubcategoryFilter("all");
+    go("catalog");
+    setOpenMenu(null);
+    setOpen(false);
+    setMobileLevel(null);
+  };
+  /* Navigation vers une sous-catégorie : Catalogue → Catégorie → Homme/Femme → Sous-catégorie → Produits */
+  const goSubcategory = (catId, gender, subcat) => {
+    setCategoryFilter(catId);
+    setBrandFilter("all");
+    setGenderFilter(gender || "all");
+    setSubcategoryFilter(subcat || "all");
     go("catalog");
     setOpenMenu(null);
     setOpen(false);
@@ -1000,6 +1087,29 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
     setOpenMenu(null);
     setOpen(false);
     setMobileLevel(null);
+  };
+
+  /* Clic racine (mobile) sur une catégorie : dirige vers l'étape appropriée
+     selon que la catégorie a un niveau Genre, un niveau Sous-catégorie
+     unisexe, ou ni l'un ni l'autre (comportement d'origine : marques). */
+  const openMobileCategory = (c) => {
+    const genders = gendersForCategory(c.id);
+    if (genders.length > 0) {
+      setMobileLevel({ id: c.id, name: c.name, step: "gender" });
+    } else if (CATALOG_TREE[c.id]) {
+      setMobileLevel({ id: c.id, name: c.name, step: "subcats", gender: null });
+    } else {
+      setMobileLevel({ id: c.id, name: c.name, step: "brands" });
+    }
+  };
+
+  const mobileBack = () => {
+    if (!mobileLevel) return;
+    if (mobileLevel.step === "subcats" && mobileLevel.gender) {
+      setMobileLevel({ id: mobileLevel.id, name: mobileLevel.name, step: "gender" });
+    } else {
+      setMobileLevel(null);
+    }
   };
 
   const closeMobileMenu = () => {
@@ -1029,11 +1139,20 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
       onMouseLeave={scheduleClose}
     >
       <div className="max-w-7xl mx-auto h-16 grid grid-cols-[1fr_auto_1fr] lg:flex lg:justify-between items-center gap-2 pl-4 pr-5 sm:pl-5 sm:pr-6 md:px-8">
-        {/* Colonne gauche — vide sur mobile, uniquement pour équilibrer symétriquement la grille
-            3 colonnes (1fr / auto / 1fr) et garantir un logo mathématiquement centré à l'écran,
-            quelle que soit la largeur du groupe panier+menu à droite. Disparaît en desktop, où
-            l'on repasse en flex classique (logo / nav / actions) via lg:flex + lg:justify-between. */}
-        <div aria-hidden="true" className="lg:hidden" />
+        {/* Colonne gauche — sur mobile, contient le bouton hamburger (aligné à gauche).
+            Disparaît en desktop (lg:hidden), où l'on repasse en flex classique via lg:flex. */}
+        <div className="lg:hidden justify-self-start flex items-center">
+          <button
+            className="relative flex flex-col items-center justify-center gap-1.5 p-2.5 -m-2.5 shrink-0"
+            onClick={() => setOpen((o) => !o)}
+            aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
+            aria-expanded={open}
+          >
+            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block", transition: "transform .2s ease, opacity .2s ease", transform: open ? "translateY(3.5px) rotate(45deg)" : "none" }} />
+            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block", transition: "opacity .15s ease", opacity: open ? 0 : 1 }} />
+            <span style={{ width: open ? 22 : 14, height: 2, background: open ? COLORS.ink : COLORS.magenta, display: "block", transition: "transform .2s ease, width .2s ease", transform: open ? "translateY(-3.5px) rotate(-45deg)" : "none" }} />
+          </button>
+        </div>
 
         {/* Logo — image officielle fournie, centrée par construction (colonne centrale "auto"
             d'une grille aux deux colonnes latérales égales). */}
@@ -1070,7 +1189,6 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
                       : COLORS.inkDim,
                 }}
               >
-                {item.label}
                 {item.dropdown && (
                   <svg
                     width="9" height="9" viewBox="0 0 9 9" fill="none"
@@ -1079,28 +1197,19 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
                     <path d="M1 2.5L4.5 6L8 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
+                {item.label}
               </button>
             </div>
           ))}
         </nav>
 
-        {/* Panier + hamburger — toujours à DROITE : colonne "1fr" de droite sur mobile
+        {/* Panier — toujours à DROITE : colonne "1fr" de droite sur mobile
             (justify-self-end + justify-end interne), position naturelle à droite en desktop. */}
         <div className="flex items-center justify-end gap-5 lg:gap-4 justify-self-end lg:justify-self-auto">
           <button onClick={() => go("admin")} className="hidden md:inline text-[11px] uppercase tracking-widest" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
             Admin
           </button>
           <CartIconButton count={cartCount || 0} onClick={onOpenCart} />
-          <button
-            className="lg:hidden relative flex flex-col items-center justify-center gap-1.5 p-2.5 -m-2.5 shrink-0"
-            onClick={() => setOpen((o) => !o)}
-            aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
-            aria-expanded={open}
-          >
-            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block", transition: "transform .2s ease, opacity .2s ease", transform: open ? "translateY(3.5px) rotate(45deg)" : "none" }} />
-            <span style={{ width: 22, height: 2, background: COLORS.ink, display: "block", transition: "opacity .15s ease", opacity: open ? 0 : 1 }} />
-            <span style={{ width: open ? 22 : 14, height: 2, background: open ? COLORS.ink : COLORS.magenta, display: "block", transition: "transform .2s ease, width .2s ease", transform: open ? "translateY(-3.5px) rotate(-45deg)" : "none" }} />
-          </button>
         </div>
       </div>
 
@@ -1147,6 +1256,70 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
                 {(() => {
                   const activeCat = CATS.find((c) => c.id === hoveredCategory) || CATS[0];
                   if (!activeCat) return null;
+
+                  /* Catégorie avec sous-catégories (Chaussures / Vêtements / Sacs / Casquettes) :
+                     panneau Genre (si applicable) + Sous-catégories, même langage visuel que les
+                     catégories principales (numéros dorés, flèches roses). */
+                  const tree = CATALOG_TREE[activeCat.id];
+                  if (tree) {
+                    const genders = gendersForCategory(activeCat.id); // [] si catégorie unisexe (Casquettes)
+                    const activeGender = genders.length ? (genders.includes(hoveredGender) ? hoveredGender : genders[0]) : null;
+                    const subcats = subcatsForCategory(activeCat.id, activeGender);
+                    return (
+                      <div>
+                        {genders.length > 0 && (
+                          <div className="flex items-center gap-2 mb-5">
+                            {genders.map((g) => (
+                              <button
+                                key={g}
+                                onMouseEnter={() => setHoveredGender(g)}
+                                onClick={() => setHoveredGender(g)}
+                                className="px-4 py-1.5 rounded-full border text-xs uppercase tracking-widest font-semibold transition-colors"
+                                style={{
+                                  fontFamily: "Inter",
+                                  borderColor: activeGender === g ? COLORS.purple : COLORS.line,
+                                  color: activeGender === g ? COLORS.magenta : COLORS.inkDim,
+                                }}
+                              >
+                                {GENDER_LABELS[g]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="text-[11px] uppercase tracking-widest mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
+                          Sous-catégories — {activeCat.name}{activeGender ? ` ${GENDER_LABELS[activeGender]}` : ""}
+                        </div>
+                        <div className="grid grid-cols-3 gap-x-6 gap-y-3.5">
+                          {subcats.map((s, i) => (
+                            <button
+                              key={s}
+                              onClick={() => goSubcategory(activeCat.id, activeGender, s)}
+                              className="text-left group flex items-center gap-2"
+                            >
+                              <span className="text-[10px] tracking-widest shrink-0" style={{ fontFamily: "IBM Plex Mono", color: COLORS.goldDim }}>
+                                {String(i + 1).padStart(2, "0")}
+                              </span>
+                              <span
+                                className="text-sm uppercase tracking-wide font-semibold transition-colors"
+                                style={{ fontFamily: "Inter", color: COLORS.ink }}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = COLORS.magenta)}
+                                onMouseLeave={(e) => (e.currentTarget.style.color = COLORS.ink)}
+                              >
+                                {s}
+                              </span>
+                              <span className="shrink-0" style={{ color: COLORS.inkDim }}>→</span>
+                            </button>
+                          ))}
+                        </div>
+                        <button onClick={() => goCategory(activeCat.id)} className="text-left block pt-5 mt-6 border-t" style={{ borderColor: COLORS.line }}>
+                          <span className="text-xs uppercase tracking-widest font-semibold" style={{ fontFamily: "Inter", color: COLORS.magenta }}>Voir tous les {activeCat.name} →</span>
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  /* Catégorie sans sous-catégories (Accessoires, Montres) : comportement d'origine,
+                     inchangé — liste des marques disponibles. */
                   const catBrands = brandsInCategory(activeCat.id);
                   return (
                     <div>
@@ -1223,7 +1396,7 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
           <div className="flex items-center justify-between px-5 h-16 border-b shrink-0" style={{ borderColor: COLORS.line }}>
             {mobileLevel ? (
               <button
-                onClick={() => setMobileLevel(null)}
+                onClick={mobileBack}
                 className="flex items-center gap-2.5 text-xs uppercase tracking-widest"
                 style={{ fontFamily: "Inter", color: COLORS.inkDim }}
                 aria-label="Retour au menu précédent"
@@ -1264,7 +1437,7 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
                 {CATS.map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => setMobileLevel({ id: c.id, name: c.name })}
+                    onClick={() => openMobileCategory(c)}
                     className="mobile-cat-card text-left rounded-2xl border px-5 py-4 flex items-center justify-between"
                     style={{ borderColor: COLORS.line }}
                   >
@@ -1284,7 +1457,6 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
                 <div className="mt-4 mb-1 px-1 text-[11px] uppercase tracking-widest" style={{ color: COLORS.goldDim, fontFamily: "Inter" }}>Explorer</div>
                 {[
                   ["catalog-new", "Nouveautés"],
-                  ["collections", "Collections"],
                   ["brands", "Marques"],
                   ["contact", "Contact"],
                 ].map(([r, label]) => (
@@ -1306,7 +1478,75 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
                   Admin
                 </button>
               </div>
+            ) : mobileLevel.step === "gender" ? (
+              /* Niveau 2 — choix Homme / Femme (catégories avec sous-catégories genrées) */
+              <div key={"menu-gender-" + mobileLevel.id} className="mobile-menu-panel px-5 py-6">
+                <h2 className="mb-1" style={{ fontFamily: "Anton", fontSize: 28, letterSpacing: 0.5, color: COLORS.ink }}>{mobileLevel.name.toUpperCase()}</h2>
+                <p className="mb-6 text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Choisissez Homme ou Femme</p>
+                <div className="flex flex-col gap-2">
+                  {gendersForCategory(mobileLevel.id).map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => setMobileLevel({ id: mobileLevel.id, name: mobileLevel.name, step: "subcats", gender: g })}
+                      className="mobile-cat-card text-left rounded-2xl border px-5 py-4 flex items-center justify-between"
+                      style={{ borderColor: COLORS.line }}
+                    >
+                      <span style={{ fontFamily: "Anton", fontSize: 19, letterSpacing: 0.5, color: COLORS.ink }}>{GENDER_LABELS[g]}</span>
+                      <span
+                        className="flex items-center justify-center rounded-full border shrink-0"
+                        style={{ width: 34, height: 34, borderColor: COLORS.line, color: COLORS.magenta }}
+                      >
+                        →
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => goCategory(mobileLevel.id)}
+                  className="mt-6 text-xs uppercase tracking-widest underline"
+                  style={{ color: COLORS.magenta, fontFamily: "Inter" }}
+                >
+                  Voir tout : {mobileLevel.name} →
+                </button>
+              </div>
+            ) : mobileLevel.step === "subcats" ? (
+              /* Niveau 3 (ou 2 pour une catégorie unisexe) — choix de la sous-catégorie */
+              <div key={"menu-subcats-" + mobileLevel.id + "-" + (mobileLevel.gender || "u")} className="mobile-menu-panel px-5 py-6">
+                <h2 className="mb-1" style={{ fontFamily: "Anton", fontSize: 28, letterSpacing: 0.5, color: COLORS.ink }}>
+                  {mobileLevel.name.toUpperCase()}{mobileLevel.gender ? ` — ${GENDER_LABELS[mobileLevel.gender].toUpperCase()}` : ""}
+                </h2>
+                <p className="mb-6 text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Choisissez une sous-catégorie</p>
+                <div className="flex flex-col gap-2">
+                  {subcatsForCategory(mobileLevel.id, mobileLevel.gender).map((s, i) => (
+                    <button
+                      key={s}
+                      onClick={() => goSubcategory(mobileLevel.id, mobileLevel.gender, s)}
+                      className="mobile-cat-card text-left rounded-2xl border px-5 py-4 flex items-center justify-between"
+                      style={{ borderColor: COLORS.line }}
+                    >
+                      <div>
+                        <div className="text-[10px] tracking-widest" style={{ fontFamily: "IBM Plex Mono", color: COLORS.goldDim }}>{String(i + 1).padStart(2, "0")}</div>
+                        <div style={{ fontFamily: "Anton", fontSize: 18, letterSpacing: 0.5, color: COLORS.ink }}>{s}</div>
+                      </div>
+                      <span
+                        className="flex items-center justify-center rounded-full border shrink-0"
+                        style={{ width: 34, height: 34, borderColor: COLORS.line, color: COLORS.magenta }}
+                      >
+                        →
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => goSubcategory(mobileLevel.id, mobileLevel.gender, null)}
+                  className="mt-6 text-xs uppercase tracking-widest underline"
+                  style={{ color: COLORS.magenta, fontFamily: "Inter" }}
+                >
+                  Voir tout : {mobileLevel.name}{mobileLevel.gender ? ` ${GENDER_LABELS[mobileLevel.gender]}` : ""} →
+                </button>
+              </div>
             ) : (
+              /* Catégorie sans sous-catégories (Accessoires, Montres) : comportement d'origine, inchangé */
               <div key={"menu-cat-" + mobileLevel.id} className="mobile-menu-panel px-5 py-6">
                 <h2 className="mb-1" style={{ fontFamily: "Anton", fontSize: 28, letterSpacing: 0.5, color: COLORS.ink }}>{mobileLevel.name.toUpperCase()}</h2>
                 <p className="mb-6 text-xs uppercase tracking-widest" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Choisissez une marque</p>
@@ -1451,34 +1691,10 @@ function Hero({ go }) {
         />
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-5 md:px-10 pt-8 pb-10 md:pt-20 md:pb-16 relative grid md:grid-cols-[0.92fr_1.18fr] gap-8 md:gap-8 items-center">
-        {/* Texte — composition éditoriale */}
-        <div className="relative z-10 order-2 md:order-1">
-          <div style={introStyle(stagger.cta, 14)}>
-            <div className="flex flex-wrap gap-4">
-              <button
-                onClick={() => go("catalog")}
-                className="hero-cta-primary px-8 py-4 text-sm uppercase tracking-widest font-semibold rounded-sm transition-transform active:scale-95"
-                style={{
-                  background: `linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta})`,
-                  color: "#08060D",
-                  fontFamily: "Inter",
-                  boxShadow: "0 0 22px rgba(255,46,196,0.55), 0 0 50px rgba(139,47,232,0.25)",
-                }}
-              >
-                Découvrir la collection
-              </button>
-
-              <GhostButton onClick={() => go("catalog-new")}>
-                Voir les nouveautés
-              </GhostButton>
-            </div>
-          </div>
-        </div>
-
-        {/* Visuels — composition éditoriale en profondeur, chevauchement léger, halos ciblés */}
-        <div className="relative order-1 md:order-2 h-[460px] xs:h-[520px] sm:h-[580px] md:h-[640px] lg:h-[720px] xl:h-[760px]">
-          {/* Halos lumineux dédiés derrière les images (studio futuriste, subtil) */}
+      <div className="max-w-[1600px] mx-auto px-5 md:px-10 pt-8 pb-10 md:pt-20 md:pb-16 relative">
+        {/* Visuel principal — image unique, centrée, pleine largeur */}
+        <div className="relative w-full mx-auto" style={imgIntroStyle(stagger.images, parallax * 0.4)}>
+          {/* Halo lumineux dédié derrière l'image (studio futuriste, subtil) */}
           <div
             aria-hidden
             className="absolute -inset-6 md:-inset-10 pointer-events-none hero-glow-drift-slow"
@@ -1492,71 +1708,57 @@ function Hero({ go }) {
             }}
           />
 
-          <div className="absolute inset-0 grid grid-cols-[1.18fr_0.86fr] gap-4 md:gap-5">
-            {/* Image gauche — grande, dominante */}
-            <div className="relative h-full" style={imgIntroStyle(stagger.images, parallax * 0.55)}>
-              <div className="relative rounded-lg overflow-hidden h-full neon-border hero-float-a">
-                <div
-                  aria-hidden
-                  className="absolute -inset-3 rounded-xl pointer-events-none"
-                  style={{
-                    background: `radial-gradient(closest-side, rgba(139,47,232,0.35), transparent 72%)`,
-                    filter: "blur(18px)",
-                    zIndex: -1,
-                  }}
-                />
-                <img
-                  src="https://cdn.phototourl.com/free/2026-08-14-4bd52cfe-91d1-4dde-b603-78f9e112d690.png"
-                  alt="Collection LXS"
-                  className="w-full h-full object-cover object-center"
-                  onError={handleImgError}
-                  loading="eager"
-                  decoding="async"
-                />
-                <div
-                  className="absolute inset-0"
-                  style={{ background: "linear-gradient(180deg, transparent 50%, rgba(8,6,13,0.8))" }}
-                />
-                <div
-                  aria-hidden
-                  className="absolute inset-0"
-                  style={{ boxShadow: "inset 0 0 60px rgba(139,47,232,0.10)" }}
-                />
-              </div>
-            </div>
-
-            {/* Image droite — plan resserré, décalée vers le bas, léger chevauchement visuel */}
-            <div className="relative h-full pt-14 sm:pt-16 md:pt-24" style={imgIntroStyle(stagger.images + 100, parallax * -0.85)}>
-              <div className="relative rounded-lg overflow-hidden h-full neon-border hero-float-b">
-                <div
-                  aria-hidden
-                  className="absolute -inset-3 rounded-xl pointer-events-none"
-                  style={{
-                    background: `radial-gradient(closest-side, rgba(255,46,196,0.32), transparent 72%)`,
-                    filter: "blur(18px)",
-                    zIndex: -1,
-                  }}
-                />
-                <img
-                  src={img("hero-b", 700, 1000)}
-                  alt="Composition produit"
-                  className="w-full h-full object-cover object-center"
-                  onError={handleImgError}
-                  loading="eager"
-                  decoding="async"
-                />
-                <div
-                  className="absolute inset-0"
-                  style={{ background: "linear-gradient(180deg, transparent 50%, rgba(8,6,13,0.8))" }}
-                />
-                <div
-                  aria-hidden
-                  className="absolute inset-0"
-                  style={{ boxShadow: "inset 0 0 60px rgba(255,46,196,0.10)" }}
-                />
-              </div>
-            </div>
+          <div className="relative rounded-lg overflow-hidden w-full neon-border hero-float-a">
+            <div
+              aria-hidden
+              className="absolute -inset-3 rounded-xl pointer-events-none"
+              style={{
+                background: `radial-gradient(closest-side, rgba(139,47,232,0.35), transparent 72%)`,
+                filter: "blur(18px)",
+                zIndex: -1,
+              }}
+            />
+            <img
+              src="https://s10.aconvert.com/convert/p3r68-cdx67/agvjh-hfx8p.jpg"
+              alt="Bienvenue chez Luxury Streetwear"
+              className="w-full h-auto max-h-[460px] xs:max-h-[520px] sm:max-h-[580px] md:max-h-[640px] lg:max-h-[720px] xl:max-h-[760px] object-contain mx-auto"
+              onError={handleImgError}
+              loading="eager"
+              decoding="async"
+            />
+            <div
+              aria-hidden
+              className="absolute inset-0"
+              style={{ boxShadow: "inset 0 0 60px rgba(139,47,232,0.10)" }}
+            />
           </div>
+        </div>
+
+        {/* Boutons — sous l'image principale, centrés */}
+        <div className="relative z-10 mt-8 md:mt-10 flex justify-center" style={introStyle(stagger.cta, 14)}>
+          <div className="flex flex-wrap gap-4 justify-center">
+            <button
+              onClick={() => go("catalog")}
+              className="hero-cta-primary px-8 py-4 text-sm uppercase tracking-widest font-semibold rounded-sm transition-transform active:scale-95"
+              style={{
+                background: `linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta})`,
+                color: "#08060D",
+                fontFamily: "Inter",
+                boxShadow: "0 0 22px rgba(255,46,196,0.55), 0 0 50px rgba(139,47,232,0.25)",
+              }}
+            >
+              Découvrir la collection
+            </button>
+
+            <GhostButton onClick={() => go("catalog-new")}>
+              Voir les nouveautés
+            </GhostButton>
+          </div>
+        </div>
+
+        {/* Rouleau des marques — déplacé sous le bouton "Voir les nouveautés" */}
+        <div className="mt-10 md:mt-14 -mx-5 md:-mx-10">
+          <BrandMarquee />
         </div>
       </div>
 
@@ -1642,7 +1844,7 @@ function BrandMarquee() {
 
 /* ---------------- Category grid ---------------- */
 
-function CategoryGrid({ go, setCategoryFilter }) {
+function CategoryGrid({ go, setCategoryFilter, setGenderFilter, setSubcategoryFilter }) {
   return (
     <section className="max-w-7xl mx-auto px-5 md:px-8 py-16">
       <Reveal><Eyebrow>Univers</Eyebrow></Reveal>
@@ -1655,7 +1857,7 @@ function CategoryGrid({ go, setCategoryFilter }) {
         {CATEGORIES.map((c) => (
           <button
             key={c.id}
-            onClick={() => { setCategoryFilter(c.id); go("catalog"); }}
+            onClick={() => { setCategoryFilter(c.id); if (setGenderFilter) setGenderFilter("all"); if (setSubcategoryFilter) setSubcategoryFilter("all"); go("catalog"); }}
             className="relative group text-left overflow-hidden rounded-md w-full transition-transform duration-300 hover:-translate-y-1"
             style={{ aspectRatio: "3/4" }}
           >
@@ -1663,10 +1865,20 @@ function CategoryGrid({ go, setCategoryFilter }) {
               src={
                 c.id === "montres"
                   ? "https://gdyavvhquzgvmsckszmi.supabase.co/storage/v1/object/public/product-images/IMG_1086.png"
+                  : c.id === "chaussures"
+                  ? "https://s11.aconvert.com/convert/p3r68-cdx67/863cs-uuil8.jpg"
+                  : c.id === "casquettes"
+                  ? "https://s11.aconvert.com/convert/p3r68-cdx67/vck6s-d88cn.jpg"
+                  : c.id === "sacs"
+                  ? "https://s11.aconvert.com/convert/p3r68-cdx67/d7hfk-24enl.jpg"
+                  : c.id === "accessoires"
+                  ? "https://cdn.phototourl.com/free/2026-08-15-a63a9cb3-ca89-4ca1-9999-15c3a44bb37f.png"
+                  : c.id === "vetements"
+                  ? "https://s10.aconvert.com/convert/p3r68-cdx67/at6wc-nuaz9.jpg"
                   : img("cat-" + c.id, 500, 650)
               }
               alt={c.name}
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
+              className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-110"
               onError={handleImgError}
               loading="lazy"
               decoding="async"
@@ -1680,7 +1892,6 @@ function CategoryGrid({ go, setCategoryFilter }) {
             <div className="absolute top-3 left-3 text-[11px] font-mono" style={{ color: COLORS.magenta }}>{c.tag}</div>
             <div className="absolute bottom-0 p-4">
               <div style={{ fontFamily: "Anton", fontSize: 22, color: COLORS.ink, letterSpacing: 0.5 }}>{c.name.toUpperCase()}</div>
-              <div className="text-[11px] mt-1" style={{ fontFamily: "Inter", color: COLORS.inkDim }}>{c.desc}</div>
             </div>
           </button>
         ))}
@@ -1766,29 +1977,46 @@ function ProductCard({ product, brand, onOpen }) {
 
 /* ---------------- Catalog ---------------- */
 
-function Catalog({ products, brands, initialCategory, initialBrand, forceNew, onOpen, go }) {
+function Catalog({ products, brands, initialCategory, initialBrand, initialGender, initialSubcategory, forceNew, forceFeatured, onOpen, go }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(initialCategory || "all");
   const [brand, setBrand] = useState(initialBrand || "all");
+  const [gender, setGender] = useState(initialGender || "all");
+  const [subcategory, setSubcategory] = useState(initialSubcategory || "all");
   const [size, setSize] = useState("all");
   const [color, setColor] = useState("all");
   const [onlyNew, setOnlyNew] = useState(!!forceNew);
-  const [onlyFeatured, setOnlyFeatured] = useState(false);
+  const [onlyFeatured, setOnlyFeatured] = useState(!!forceFeatured);
   const [sort, setSort] = useState("relevance");
   const [mobileFilters, setMobileFilters] = useState(false);
 
   useEffect(() => { setCategory(initialCategory || "all"); }, [initialCategory]);
   useEffect(() => { setBrand(initialBrand || "all"); }, [initialBrand]);
+  useEffect(() => { setGender(initialGender || "all"); }, [initialGender]);
+  useEffect(() => { setSubcategory(initialSubcategory || "all"); }, [initialSubcategory]);
   useEffect(() => { setOnlyNew(!!forceNew); }, [forceNew]);
+  useEffect(() => { setOnlyFeatured(!!forceFeatured); }, [forceFeatured]);
 
   const allSizes = useMemo(() => Array.from(new Set(products.flatMap((p) => p.sizes))).sort(), [products]);
   const allColors = useMemo(() => Array.from(new Set(products.flatMap((p) => p.colors))), [products]);
+
+  // Genre / sous-catégories disponibles pour la catégorie actuellement sélectionnée
+  // (vide si la catégorie n'a pas de niveau Genre/Sous-catégorie, ex : Accessoires, Montres)
+  const gendersAvailable = category !== "all" ? gendersForCategory(category) : [];
+  const subcatsAvailable =
+    category !== "all"
+      ? (gendersAvailable.length > 0
+          ? (gender !== "all" ? subcatsForCategory(category, gender) : allSubcatsForCategory(category))
+          : allSubcatsForCategory(category))
+      : [];
 
   const filtered = useMemo(() => {
     let list = products.filter((p) => {
       if (search && !(`${p.name} ${p.reference}`.toLowerCase().includes(search.toLowerCase()))) return false;
       if (category !== "all" && p.categoryId !== category) return false;
       if (brand !== "all" && p.brandId !== brand) return false;
+      if (gender !== "all" && p.gender !== gender) return false;
+      if (subcategory !== "all" && p.subcategory !== subcategory) return false;
       if (size !== "all" && !p.sizes.includes(size)) return false;
       if (color !== "all" && !p.colors.includes(color)) return false;
       if (onlyNew && !p.isNew) return false;
@@ -1798,17 +2026,45 @@ function Catalog({ products, brands, initialCategory, initialBrand, forceNew, on
     if (sort === "name") list = [...list].sort((a, b) => a.name.localeCompare(b.name));
     if (sort === "new") list = [...list].sort((a, b) => Number(b.isNew) - Number(a.isNew));
     return list;
-  }, [products, search, category, brand, size, color, onlyNew, onlyFeatured, sort]);
+  }, [products, search, category, brand, gender, subcategory, size, color, onlyNew, onlyFeatured, sort]);
 
   const Filters = () => (
     <div className="space-y-6">
       <div>
         <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Catégorie</label>
-        <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle}>
+        <select
+          value={category}
+          onChange={(e) => { setCategory(e.target.value); setGender("all"); setSubcategory("all"); }}
+          className="w-full px-3 py-2 text-sm rounded-sm"
+          style={selectStyle}
+        >
           <option value="all">Toutes</option>
           {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
+      {gendersAvailable.length > 0 && (
+        <div>
+          <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Genre</label>
+          <select
+            value={gender}
+            onChange={(e) => { setGender(e.target.value); setSubcategory("all"); }}
+            className="w-full px-3 py-2 text-sm rounded-sm"
+            style={selectStyle}
+          >
+            <option value="all">Tous</option>
+            {gendersAvailable.map((g) => <option key={g} value={g}>{GENDER_LABELS[g]}</option>)}
+          </select>
+        </div>
+      )}
+      {subcatsAvailable.length > 0 && (
+        <div>
+          <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Sous-catégorie</label>
+          <select value={subcategory} onChange={(e) => setSubcategory(e.target.value)} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle}>
+            <option value="all">Toutes</option>
+            {subcatsAvailable.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      )}
       <div>
         <label className="text-[11px] uppercase tracking-widest block mb-2" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Marque</label>
         <select value={brand} onChange={(e) => setBrand(e.target.value)} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle}>
@@ -1839,7 +2095,7 @@ function Catalog({ products, brands, initialCategory, initialBrand, forceNew, on
         Mis en avant uniquement
       </label>
       <button
-        onClick={() => { setSearch(""); setCategory("all"); setBrand("all"); setSize("all"); setColor("all"); setOnlyNew(false); setOnlyFeatured(false); }}
+        onClick={() => { setSearch(""); setCategory("all"); setBrand("all"); setGender("all"); setSubcategory("all"); setSize("all"); setColor("all"); setOnlyNew(false); setOnlyFeatured(false); }}
         className="text-xs uppercase tracking-widest underline"
         style={{ color: COLORS.magenta, fontFamily: "Inter" }}
       >
@@ -2148,6 +2404,7 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
 
   const similar = products.filter((p) => p.id !== product.id && p.categoryId === product.categoryId).slice(0, 4);
   const categoryLabel = CATEGORIES.find((c) => c.id === product.categoryId)?.name;
+  const genderLabel = product.gender ? GENDER_LABELS[product.gender] : null;
   const isShoe = product.categoryId === "chaussures";
   const isLongDesc = (product.description || "").length > 140;
 
@@ -2315,6 +2572,8 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
                   content: (
                     <div className="space-y-3">
                       <DetailRow label="Catégorie" value={categoryLabel} />
+                      <DetailRow label="Genre" value={genderLabel} />
+                      <DetailRow label="Sous-catégorie" value={product.subcategory} />
                       <DetailRow label="Marque" value={brand?.name} />
                       <DetailRow label="Référence" value={product.reference} mono />
                       <DetailRow label="Authenticité" value="Garantie" />
@@ -2358,6 +2617,8 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
 /* ---------------- Brands page ---------------- */
 
 function BrandsPage({ brands, products, onOpenBrand, selectedBrand, onOpen, go }) {
+  const [brandSearch, setBrandSearch] = useState("");
+
   if (selectedBrand) {
     const brand = brands.find((b) => b.id === selectedBrand);
     const brandProducts = products.filter((p) => p.brandId === selectedBrand);
@@ -2377,54 +2638,50 @@ function BrandsPage({ brands, products, onOpenBrand, selectedBrand, onOpen, go }
       </section>
     );
   }
+
+  const filteredBrands = brands.filter((b) => b.name.toLowerCase().includes(brandSearch.trim().toLowerCase()));
+
   return (
     <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
       <Eyebrow>Univers Luxury Streetwear</Eyebrow>
-      <h1 className="mt-3 mb-8" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>MARQUES</h1>
-      <div className="grid md:grid-cols-2 gap-5">
-        {brands.map((b) => {
-          const count = products.filter((p) => p.brandId === b.id).length;
-          return (
-            <button key={b.id} onClick={() => onOpenBrand(b.id)} className="relative text-left p-6 rounded-sm border overflow-hidden group" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
-              <TagCorner />
-              <div style={{ fontFamily: "Anton", fontSize: 26, color: COLORS.ink }}>{b.name.toUpperCase()}</div>
-              <p className="text-sm mt-2 max-w-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{b.description}</p>
-              <div className="text-xs mt-4 uppercase tracking-widest" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>{count} produit{count > 1 ? "s" : ""} →</div>
-            </button>
-          );
-        })}
+      <h1 className="mt-3 mb-6" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>MARQUES</h1>
+      <div className="relative max-w-sm mb-8">
+        <input
+          type="text"
+          value={brandSearch}
+          onChange={(e) => setBrandSearch(e.target.value)}
+          placeholder="Rechercher une marque…"
+          className="w-full px-4 py-2.5 text-sm rounded-sm"
+          style={selectStyle}
+        />
+        {brandSearch && (
+          <button
+            onClick={() => setBrandSearch("")}
+            aria-label="Effacer la recherche"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
+            style={{ color: COLORS.inkDim, fontFamily: "Inter" }}
+          >
+            ✕
+          </button>
+        )}
       </div>
-    </section>
-  );
-}
-
-/* ---------------- Collections (curated views) ---------------- */
-
-function CollectionsPage({ products, brands, onOpen, go, setCategoryFilter }) {
-  const featured = products.filter((p) => p.featured);
-  const news = products.filter((p) => p.isNew);
-  const groups = [
-    { title: "PIÈCES SIGNATURE", items: featured },
-    { title: "DERNIÈRES ARRIVÉES", items: news },
-  ];
-  return (
-    <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
-      <Eyebrow>Sélections</Eyebrow>
-      <h1 className="mt-3 mb-10" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>COLLECTIONS</h1>
-      {groups.map((g) => (
-        <div key={g.title} className="mb-14">
-          <h2 className="mb-5 neon-text" style={{ fontFamily: "Anton", fontSize: 24 }}>{g.title}</h2>
-          {g.items.length === 0 ? (
-            <p className="text-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucune pièce pour le moment.</p>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-              {g.items.map((p) => (
-                <ProductCard key={p.id} product={p} brand={brands.find((b) => b.id === p.brandId)} onOpen={onOpen} />
-              ))}
-            </div>
-          )}
+      {filteredBrands.length === 0 ? (
+        <p className="text-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Aucune marque ne correspond à « {brandSearch} ».</p>
+      ) : (
+        <div className="grid md:grid-cols-2 gap-5">
+          {filteredBrands.map((b) => {
+            const count = products.filter((p) => p.brandId === b.id).length;
+            return (
+              <button key={b.id} onClick={() => onOpenBrand(b.id)} className="relative text-left p-6 rounded-sm border overflow-hidden group" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
+                <TagCorner />
+                <div style={{ fontFamily: "Anton", fontSize: 26, color: COLORS.ink }}>{b.name.toUpperCase()}</div>
+                <p className="text-sm mt-2 max-w-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{b.description}</p>
+                <div className="text-xs mt-4 uppercase tracking-widest" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>{count} produit{count > 1 ? "s" : ""} →</div>
+              </button>
+            );
+          })}
         </div>
-      ))}
+      )}
     </section>
   );
 }
@@ -2878,6 +3135,8 @@ function emptyProduct() {
     name: "",
     brandId: "",
     categoryId: "",
+    gender: "",
+    subcategory: "",
     reference: "",
     description: "",
     images: [],
@@ -3011,6 +3270,16 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
 
   const saveProduct = async () => {
     if (!editing.name || !editing.brandId || !editing.categoryId || !editing.reference) return;
+    // Genre / Sous-catégorie obligatoires uniquement pour les catégories qui les proposent
+    // (Chaussures, Vêtements, Sacs, Casquettes) — Accessoires et Montres n'en ont pas besoin.
+    if (gendersForCategory(editing.categoryId).length > 0 && !editing.gender) {
+      setSaveError("Veuillez choisir un genre (Homme / Femme) pour cette catégorie.");
+      return;
+    }
+    if (CATALOG_TREE[editing.categoryId] && !editing.subcategory) {
+      setSaveError("Veuillez choisir une sous-catégorie pour ce produit.");
+      return;
+    }
     setSaveError("");
     try {
       await requireAdmin();
@@ -3533,6 +3802,7 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
                   <th className="py-2 pr-4">Produit</th>
                   <th className="py-2 pr-4">Marque</th>
                   <th className="py-2 pr-4">Catégorie</th>
+                  <th className="py-2 pr-4">Genre / Sous-cat.</th>
                   <th className="py-2 pr-4">Réf.</th>
                   <th className="py-2 pr-4">Statut</th>
                   <th className="py-2 pr-4">Actions</th>
@@ -3547,6 +3817,9 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
                     </td>
                     <td className="py-2 pr-4" style={{ color: COLORS.inkDim }}>{brands.find((b) => b.id === p.brandId)?.name || "—"}</td>
                     <td className="py-2 pr-4" style={{ color: COLORS.inkDim }}>{categories.find((c) => c.id === p.categoryId)?.name || "—"}</td>
+                    <td className="py-2 pr-4" style={{ color: COLORS.inkDim }}>
+                      {[p.gender ? GENDER_LABELS[p.gender] : null, p.subcategory || null].filter(Boolean).join(" · ") || "—"}
+                    </td>
                     <td className="py-2 pr-4 font-mono text-xs" style={{ color: COLORS.inkDim }}>{p.reference}</td>
                     <td className="py-2 pr-4">
                       <div className="flex gap-1 flex-wrap">
@@ -3594,11 +3867,44 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
             </div>
             <div>
               <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Catégorie</label>
-              <select className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle} value={editing.categoryId} onChange={(e) => setEditing({ ...editing, categoryId: e.target.value })}>
+              <select
+                className="w-full px-3 py-2 text-sm rounded-sm"
+                style={selectStyle}
+                value={editing.categoryId}
+                onChange={(e) => setEditing({ ...editing, categoryId: e.target.value, gender: "", subcategory: "" })}
+              >
                 <option value="">— Choisir —</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
+            {gendersForCategory(editing.categoryId).length > 0 && (
+              <div>
+                <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Genre</label>
+                <select
+                  className="w-full px-3 py-2 text-sm rounded-sm"
+                  style={selectStyle}
+                  value={editing.gender}
+                  onChange={(e) => setEditing({ ...editing, gender: e.target.value, subcategory: "" })}
+                >
+                  <option value="">— Choisir —</option>
+                  {gendersForCategory(editing.categoryId).map((g) => <option key={g} value={g}>{GENDER_LABELS[g]}</option>)}
+                </select>
+              </div>
+            )}
+            {CATALOG_TREE[editing.categoryId] && (gendersForCategory(editing.categoryId).length === 0 || editing.gender) && (
+              <div>
+                <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Sous-catégorie</label>
+                <select
+                  className="w-full px-3 py-2 text-sm rounded-sm"
+                  style={selectStyle}
+                  value={editing.subcategory}
+                  onChange={(e) => setEditing({ ...editing, subcategory: e.target.value })}
+                >
+                  <option value="">— Choisir —</option>
+                  {subcatsForCategory(editing.categoryId, editing.gender || null).map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
             <div className="sm:col-span-2">
               <label className="text-[11px] uppercase tracking-widest block mb-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Description</label>
               <textarea rows={3} className="w-full px-3 py-2 text-sm rounded-sm" style={selectStyle} value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
@@ -4241,7 +4547,7 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
 
 /* ---------------- Footer ---------------- */
 
-function Footer({ go }) {
+function Footer({ go, setCategoryFilter, setGenderFilter, setSubcategoryFilter }) {
   return (
     <footer className="border-t mt-10" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
       <div className="max-w-7xl mx-auto px-5 md:px-8 py-8 sm:py-10 md:py-12 grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-7 sm:gap-8">
@@ -4251,14 +4557,21 @@ function Footer({ go }) {
         </div>
         <div>
           <div className="text-[11px] uppercase tracking-widest mb-2.5 sm:mb-3" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>Navigation</div>
-          {[["home","Accueil"],["catalog","Catalogue"],["catalog-new","Nouveautés"],["collections","Collections"],["contact","Contact"]].map(([r,l]) => (
+          {[["home","Accueil"],["catalog","Catalogue"],["catalog-new","Nouveautés"],["contact","Contact"]].map(([r,l]) => (
             <button key={r} onClick={() => go(r)} className="block text-xs py-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{l}</button>
           ))}
         </div>
         <div>
           <div className="text-[11px] uppercase tracking-widest mb-2.5 sm:mb-3" style={{ color: COLORS.magenta, fontFamily: "Inter" }}>Catégories</div>
           {CATEGORIES.map((c) => (
-            <div key={c.id} className="text-xs py-1" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{c.name}</div>
+            <button
+              key={c.id}
+              onClick={() => { setCategoryFilter(c.id); if (setGenderFilter) setGenderFilter("all"); if (setSubcategoryFilter) setSubcategoryFilter("all"); go("catalog"); }}
+              className="block text-xs py-1"
+              style={{ color: COLORS.inkDim, fontFamily: "Inter" }}
+            >
+              {c.name}
+            </button>
           ))}
         </div>
         <div className="col-span-2 md:col-span-1">
@@ -4507,6 +4820,8 @@ function App() {
   const [selectedProductId, setSelectedProductId] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [brandFilter, setBrandFilter] = useState("all");
+  const [genderFilter, setGenderFilter] = useState("all");
+  const [subcategoryFilter, setSubcategoryFilter] = useState("all");
   const [selectedBrandId, setSelectedBrandId] = useState(null);
 
   /* ----- Panier WhatsApp — minimal, persistant en localStorage ----- */
@@ -4876,6 +5191,8 @@ function App() {
         products={products}
         setCategoryFilter={setCategoryFilter}
         setBrandFilter={setBrandFilter}
+        setGenderFilter={setGenderFilter}
+        setSubcategoryFilter={setSubcategoryFilter}
         setSelectedBrandId={setSelectedBrandId}
         cartCount={cartCount}
         onOpenCart={() => setCartOpen(true)}
@@ -4883,9 +5200,8 @@ function App() {
 
       {route === "home" && (
         <>
-          <BrandMarquee />
           <Hero go={go} />
-          <CategoryGrid go={go} setCategoryFilter={setCategoryFilter} />
+          <CategoryGrid go={go} setCategoryFilter={setCategoryFilter} setGenderFilter={setGenderFilter} setSubcategoryFilter={setSubcategoryFilter} />
           <section className="max-w-7xl mx-auto px-5 md:px-8 pb-16">
             <div className="flex items-end justify-between mb-6">
               <Reveal>
@@ -4907,10 +5223,10 @@ function App() {
               <Reveal>
                 <div>
                   <Eyebrow>Sélection</Eyebrow>
-                  <h2 className="mt-3" style={{ fontFamily: "Anton", fontSize: "clamp(24px,4vw,36px)", color: COLORS.ink }}>PIÈCES SIGNATURE</h2>
+                  <h2 className="mt-3" style={{ fontFamily: "Anton", fontSize: "clamp(24px,4vw,36px)", color: COLORS.ink }}>NOS MEILLEURES VENTES</h2>
                 </div>
               </Reveal>
-              <GhostButton onClick={() => go("collections")}>Voir tout</GhostButton>
+              <GhostButton onClick={() => go("catalog-featured")}>Voir tout</GhostButton>
             </div>
             <RevealGroup className="grid grid-cols-2 md:grid-cols-4 gap-5" step={70} y={20}>
               {products.filter((p) => p.featured).slice(0, 4).map((p) => (
@@ -4923,10 +5239,13 @@ function App() {
       )}
 
       {route === "catalog" && (
-        <Catalog products={products} brands={brands} initialCategory={categoryFilter} initialBrand={brandFilter} forceNew={false} onOpen={openProduct} go={go} />
+        <Catalog products={products} brands={brands} initialCategory={categoryFilter} initialBrand={brandFilter} initialGender={genderFilter} initialSubcategory={subcategoryFilter} forceNew={false} onOpen={openProduct} go={go} />
       )}
       {route === "catalog-new" && (
         <Catalog products={products} brands={brands} initialCategory="all" initialBrand="all" forceNew={true} onOpen={openProduct} go={go} />
+      )}
+      {route === "catalog-featured" && (
+        <Catalog products={products} brands={brands} initialCategory="all" initialBrand="all" forceFeatured={true} onOpen={openProduct} go={go} />
       )}
 
       {route === "product" && selectedProduct && (
@@ -4935,10 +5254,6 @@ function App() {
 
       {route === "brands" && (
         <BrandsPage brands={brands} products={products} onOpenBrand={setSelectedBrandId} selectedBrand={selectedBrandId} onOpen={openProduct} go={go} />
-      )}
-
-      {route === "collections" && (
-        <CollectionsPage products={products} brands={brands} onOpen={openProduct} go={go} setCategoryFilter={setCategoryFilter} />
       )}
 
       {route === "about" && <AboutPage go={go} />}
@@ -4979,7 +5294,7 @@ function App() {
         />
       )}
 
-      <Footer go={go} />
+      <Footer go={go} setCategoryFilter={setCategoryFilter} setGenderFilter={setGenderFilter} setSubcategoryFilter={setSubcategoryFilter} />
 
       <CartDrawer
         open={cartOpen}
