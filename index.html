@@ -959,6 +959,99 @@ const prefersReducedMotion =
     ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
     : false;
 
+/* ---------------- Effet 3D interactif (tilt/parallaxe) ----------------
+   Hook léger, sans dépendance externe, appliqué aux images produit (carte +
+   fiche produit) pour donner une impression de profondeur/3D à partir des
+   photos existantes — pas de vraie rotation 360°, juste inclinaison, léger
+   reflet et zoom doux qui suivent la souris (desktop) ou le doigt (mobile).
+
+   - Anime via requestAnimationFrame uniquement (pas de calcul en continu,
+     la boucle s'arrête dès que la cible est atteinte).
+   - Respecte prefers-reduced-motion : renvoie alors des handlers vides et
+     aucune transformation n'est appliquée.
+   - N'appelle jamais preventDefault sur le touch : ne bloque jamais le
+     scroll de la page ni le swipe existant de la galerie.
+   - Peut être combiné avec d'autres handlers (onTouchStart/onTouchEnd déjà
+     utilisés pour le swipe des miniatures) sans les remplacer.
+------------------------------------------------------------------------- */
+function useTilt3D({ maxTilt = 8, glareOpacity = 0.16, scaleOnActive = 1, enableTouch = true } = {}) {
+  const ref = useRef(null);
+  const glareRef = useRef(null);
+  const rafRef = useRef(null);
+  const target = useRef({ rx: 0, ry: 0, gx: 50, gy: 50, active: false });
+  const current = useRef({ rx: 0, ry: 0, gx: 50, gy: 50, s: 1 });
+
+  const loop = () => {
+    const el = ref.current;
+    if (!el) { rafRef.current = null; return; }
+    const t = target.current;
+    const c = current.current;
+    const ease = 0.16;
+    c.rx += (t.rx - c.rx) * ease;
+    c.ry += (t.ry - c.ry) * ease;
+    c.gx += (t.gx - c.gx) * ease;
+    c.gy += (t.gy - c.gy) * ease;
+    c.s += ((t.active ? scaleOnActive : 1) - c.s) * ease;
+    el.style.transform = `perspective(1000px) rotateX(${c.rx.toFixed(2)}deg) rotateY(${c.ry.toFixed(2)}deg) scale(${c.s.toFixed(4)})`;
+    if (glareRef.current) {
+      glareRef.current.style.opacity = t.active ? glareOpacity : 0;
+      glareRef.current.style.background = `radial-gradient(circle at ${c.gx.toFixed(1)}% ${c.gy.toFixed(1)}%, rgba(255,255,255,0.9), rgba(255,255,255,0) 60%)`;
+    }
+    const stillMoving =
+      Math.abs(t.rx - c.rx) > 0.02 ||
+      Math.abs(t.ry - c.ry) > 0.02 ||
+      Math.abs(t.s - c.s) > 0.001 ||
+      Math.abs(t.gx - c.gx) > 0.15;
+    rafRef.current = stillMoving ? requestAnimationFrame(loop) : null;
+  };
+
+  const kick = () => { if (!rafRef.current) rafRef.current = requestAnimationFrame(loop); };
+
+  const setFromPoint = (clientX, clientY) => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const px = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const py = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+    target.current = { rx: (0.5 - py) * maxTilt, ry: (px - 0.5) * maxTilt, gx: px * 100, gy: py * 100, active: true };
+    kick();
+  };
+
+  const reset = () => {
+    target.current = { ...target.current, rx: 0, ry: 0, active: false };
+    kick();
+  };
+
+  useEffect(() => {
+    return () => { rafRef.current && cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  if (prefersReducedMotion) {
+    return { ref, glareRef, handlers: {}, style: {}, glareStyle: { display: "none" }, disabled: true, reset: () => {} };
+  }
+
+  const handlers = {
+    onMouseMove: (e) => setFromPoint(e.clientX, e.clientY),
+    onMouseLeave: reset,
+  };
+  if (enableTouch) {
+    handlers.onTouchMove = (e) => {
+      if (e.touches && e.touches[0]) setFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+    };
+  }
+
+  return {
+    ref,
+    glareRef,
+    handlers,
+    style: { transformStyle: "preserve-3d", willChange: "transform" },
+    glareStyle: { mixBlendMode: "overlay" },
+    disabled: false,
+    reset,
+  };
+}
+
 function Reveal({ children, delay = 0, y = 18, blur = true, className = "", as = "div", once = true }) {
   const ref = useRef(null);
   const [visible, setVisible] = useState(prefersReducedMotion);
@@ -1014,250 +1107,6 @@ function RevealGroup({ children, step = 70, y = 16, className = "" }) {
           {child}
         </Reveal>
       ))}
-    </div>
-  );
-}
-
-/* ---------------- SlideIn — variante directionnelle de Reveal ----------------
-   Même moteur (IntersectionObserver, transform+opacity uniquement, respecte
-   prefers-reduced-motion) mais entrée depuis la gauche/droite/bas, avec une
-   légère mise à l'échelle. Sert à varier la personnalité des sections plutôt
-   que de répéter le même fade-up partout. */
-function SlideIn({ children, from = "left", delay = 0, distance = 34, className = "", as = "div", once = true }) {
-  const ref = useRef(null);
-  const [visible, setVisible] = useState(prefersReducedMotion);
-
-  useEffect(() => {
-    if (prefersReducedMotion) return;
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setVisible(true);
-            if (once) io.unobserve(entry.target);
-          } else if (!once) {
-            setVisible(false);
-          }
-        });
-      },
-      { threshold: 0.16, rootMargin: "0px 0px -8% 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [once]);
-
-  const axis = { left: "X", right: "X", up: "Y", down: "Y" }[from] || "X";
-  const sign = { left: -1, right: 1, up: 1, down: -1 }[from] || -1;
-  const hiddenTransform =
-    axis === "X" ? `translateX(${sign * distance}px) scale(0.985)` : `translateY(${sign * distance}px) scale(0.985)`;
-
-  const Tag = as;
-  return (
-    <Tag
-      ref={ref}
-      className={className}
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? "translate(0,0) scale(1)" : hiddenTransform,
-        transition: prefersReducedMotion
-          ? "none"
-          : `opacity 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}ms, transform 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}ms`,
-        willChange: "opacity, transform",
-      }}
-    >
-      {children}
-    </Tag>
-  );
-}
-
-/* ---------------- ScaleIn — léger zoom d'entrée (0.94 -> 1), pour images/visuels ---------------- */
-function ScaleIn({ children, delay = 0, className = "", as = "div", once = true }) {
-  const ref = useRef(null);
-  const [visible, setVisible] = useState(prefersReducedMotion);
-
-  useEffect(() => {
-    if (prefersReducedMotion) return;
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setVisible(true);
-            if (once) io.unobserve(entry.target);
-          } else if (!once) {
-            setVisible(false);
-          }
-        });
-      },
-      { threshold: 0.16, rootMargin: "0px 0px -8% 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [once]);
-
-  const Tag = as;
-  return (
-    <Tag
-      ref={ref}
-      className={className}
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? "scale(1)" : "scale(0.94)",
-        transition: prefersReducedMotion
-          ? "none"
-          : `opacity 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}ms, transform 0.8s cubic-bezier(0.16,1,0.3,1) ${delay}ms`,
-        willChange: "opacity, transform",
-      }}
-    >
-      {children}
-    </Tag>
-  );
-}
-
-/* ---------------- ImageReveal — effet éditorial : un panneau masque l'image
-   puis se déplace au scroll pour la révéler. Utilisé avec parcimonie sur les
-   grands visuels (catégories, hero secondaires) pour un rendu "fashion". ---------------- */
-function ImageReveal({ children, direction = "left", className = "" }) {
-  const ref = useRef(null);
-  const [visible, setVisible] = useState(prefersReducedMotion);
-
-  useEffect(() => {
-    if (prefersReducedMotion) return;
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setVisible(true);
-            io.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.2, rootMargin: "0px 0px -10% 0px" }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  const panelTransform = visible
-    ? { left: "translateX(-101%)", right: "translateX(101%)", up: "translateY(-101%)", down: "translateY(101%)" }[direction]
-    : "translate(0,0)";
-
-  return (
-    <div ref={ref} className={`relative overflow-hidden ${className}`}>
-      <div
-        style={{
-          opacity: visible ? 1 : 0,
-          transform: visible ? "scale(1)" : "scale(1.08)",
-          transition: prefersReducedMotion ? "none" : "opacity 0.5s ease 0.15s, transform 1.1s cubic-bezier(0.16,1,0.3,1)",
-          willChange: "transform",
-          height: "100%",
-        }}
-      >
-        {children}
-      </div>
-      {!prefersReducedMotion && (
-        <div
-          aria-hidden
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `linear-gradient(135deg, ${COLORS.surface2}, ${COLORS.bg})`,
-            transform: panelTransform,
-            transition: "transform 0.85s cubic-bezier(0.65,0,0.2,1)",
-            zIndex: 2,
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-/* ---------------- HoverCard — enveloppe légère pour donner du relief au survol
-   (élévation + ombre douce), sans jamais toucher aux couleurs du contenu. ---------------- */
-function HoverCard({ children, className = "", lift = 6, scale = 1.015 }) {
-  return (
-    <div
-      className={`hover-card-lift ${className}`}
-      style={{ "--lift": `${lift}px`, "--scale": scale }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/* ---------------- useScrollVelocity — vitesse de scroll normalisée (0 -> ~1+),
-   lissée, utilisée pour moduler très légèrement certaines animations (aucune
-   utilisation ne doit rendre le site "incontrôlable" — cf. règle du brief). ---------------- */
-function useScrollVelocity() {
-  const [velocity, setVelocity] = useState(0);
-  useEffect(() => {
-    if (prefersReducedMotion) return;
-    let lastY = window.scrollY;
-    let lastT = performance.now();
-    let raf = null;
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        const y = window.scrollY;
-        const t = performance.now();
-        const dt = Math.max(1, t - lastT);
-        const v = Math.abs(y - lastY) / dt; // px/ms
-        setVelocity((prev) => prev * 0.7 + Math.min(v, 3) * 0.3);
-        lastY = y;
-        lastT = t;
-        raf = null;
-      });
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-  return velocity;
-}
-
-/* ---------------- ScrollProgress — fine barre de progression en haut de page.
-   Purement transform (scaleX), coût quasi nul. ---------------- */
-function ScrollProgress() {
-  const barRef = useRef(null);
-  useEffect(() => {
-    if (prefersReducedMotion) return;
-    let raf = null;
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        const doc = document.documentElement;
-        const max = doc.scrollHeight - doc.clientHeight;
-        const ratio = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
-        if (barRef.current) barRef.current.style.transform = `scaleX(${ratio})`;
-        raf = null;
-      });
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-  if (prefersReducedMotion) return null;
-  return (
-    <div
-      aria-hidden
-      className="fixed top-0 left-0 right-0 z-50 pointer-events-none"
-      style={{ height: 2 }}
-    >
-      <div
-        ref={barRef}
-        style={{
-          height: "100%",
-          width: "100%",
-          transformOrigin: "0% 50%",
-          transform: "scaleX(0)",
-          background: `linear-gradient(90deg, ${COLORS.purple}, ${COLORS.magenta}, ${COLORS.gold})`,
-          boxShadow: `0 0 8px rgba(245,197,66,0.6)`,
-          transition: "transform 0.12s linear",
-        }}
-      />
     </div>
   );
 }
@@ -1416,7 +1265,7 @@ function FAQSection({ items = FAQ_ITEMS, showCta = false }) {
   const [openIndex, setOpenIndex] = useState(0);
 
   return (
-    <section className="max-w-4xl mx-auto px-4 md:px-8 py-14 sm:py-20">
+    <section className="max-w-4xl mx-auto px-5 md:px-8 py-14 sm:py-20">
       <Reveal>
         <Eyebrow>FAQ</Eyebrow>
         <h2 className="mt-3 mb-8 sm:mb-10" style={{ fontFamily: "Anton", fontSize: "clamp(24px,4vw,36px)", color: COLORS.ink }}>
@@ -1598,53 +1447,14 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
     };
   }, [open]);
 
-  /* Navbar légèrement plus compacte après quelques pixels de scroll —
-     comportement existant (couleurs, structure) inchangé, seule la taille
-     et l'intensité du fond/ombre évoluent en douceur. */
-  const [scrolled, setScrolled] = useState(false);
-  /* La barre se masque quand on descend, et revient immédiatement dès qu'on
-     remonte (même de quelques pixels) — comportement classique "sticky reveal". */
-  const [hidden, setHidden] = useState(false);
-  useEffect(() => {
-    let lastY = window.scrollY;
-    const onScroll = () => {
-      const y = window.scrollY;
-      setScrolled(y > 24);
-      const delta = y - lastY;
-      if (y < 80) {
-        // Toujours visible tout en haut de page.
-        setHidden(false);
-      } else if (delta > 4) {
-        setHidden(true); // on descend -> on masque
-      } else if (delta < -4) {
-        setHidden(false); // on remonte -> on affiche
-      }
-      lastY = y;
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-  // Le menu mobile ouvert force toujours l'affichage de la barre.
-  const headerHidden = hidden && !open;
-
   return (
     <>
     <header
-      className="site-header sticky top-0 z-40 border-b relative"
-      style={{
-        background: scrolled ? "rgba(15,8,6,0.97)" : "rgba(15,8,6,0.92)",
-        backdropFilter: "blur(10px)",
-        borderColor: COLORS.line,
-        boxShadow: scrolled ? "0 8px 24px -18px rgba(0,0,0,0.7)" : "none",
-        transform: headerHidden ? "translateY(-100%)" : "translateY(0)",
-      }}
+      className="sticky top-0 z-40 border-b relative"
+      style={{ background: "rgba(15,8,6,0.92)", backdropFilter: "blur(10px)", borderColor: COLORS.line }}
       onMouseLeave={scheduleClose}
     >
-      <div
-        className="site-header-inner max-w-7xl mx-auto grid grid-cols-[1fr_auto_1fr] lg:flex lg:justify-between items-center gap-2 pl-4 pr-5 sm:pl-5 sm:pr-6 md:px-8"
-        style={{ height: scrolled ? 56 : 64 }}
-      >
+      <div className="max-w-7xl mx-auto h-16 grid grid-cols-[1fr_auto_1fr] lg:flex lg:justify-between items-center gap-2 pl-4 pr-5 sm:pl-5 sm:pr-6 md:px-8">
         {/* Colonne gauche — sur mobile, contient le bouton hamburger (aligné à gauche).
             Disparaît en desktop (lg:hidden), où l'on repasse en flex classique via lg:flex. */}
         <div className="lg:hidden justify-self-start flex items-center">
@@ -1664,8 +1474,7 @@ function Header({ route, go, cartCount, categories, brands, products, setCategor
             d'une grille aux deux colonnes latérales égales). */}
         <button
           onClick={() => { go("home"); setOpenMenu(null); }}
-          className="site-header-logo flex items-center leading-none justify-self-center lg:justify-self-auto"
-          style={{ transform: scrolled ? "scale(0.94)" : "scale(1)" }}
+          className="flex items-center leading-none justify-self-center lg:justify-self-auto"
           aria-label="King Outlet — Retour à l'accueil"
         >
           <img
@@ -2360,20 +2169,20 @@ function BrandMarquee() {
 
 function CategoryGrid({ go, setCategoryFilter, setGenderFilter, setSubcategoryFilter }) {
   return (
-    <section className="max-w-7xl mx-auto px-4 md:px-8 pt-4 pb-16 md:pt-6">
-      <SlideIn from="right"><Eyebrow>Univers</Eyebrow></SlideIn>
-      <ScaleIn delay={80}>
+    <section className="max-w-7xl mx-auto px-5 md:px-8 pt-4 pb-16 md:pt-6">
+      <Reveal><Eyebrow>Univers</Eyebrow></Reveal>
+      <Reveal delay={70}>
         <h2 className="mt-3 mb-8" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>
           CATÉGORIES
         </h2>
-      </ScaleIn>
+      </Reveal>
       <RevealGroup className="grid grid-cols-2 md:grid-cols-3 gap-4" step={60} y={20}>
         {CATEGORIES.map((c) => (
           <button
             key={c.id}
             onClick={() => { setCategoryFilter(c.id); if (setGenderFilter) setGenderFilter("all"); if (setSubcategoryFilter) setSubcategoryFilter("all"); go("catalog"); }}
-            className="hover-card-lift relative group text-left overflow-hidden rounded-md w-full"
-            style={{ aspectRatio: "3/4", "--lift": "4px", "--scale": 1.015 }}
+            className="relative group text-left overflow-hidden rounded-md w-full transition-transform duration-300 hover:-translate-y-1"
+            style={{ aspectRatio: "3/4" }}
           >
             <img
               src={
@@ -2418,19 +2227,22 @@ function CategoryGrid({ go, setCategoryFilter, setGenderFilter, setSubcategoryFi
 
 function ProductCard({ product, brand, onOpen }) {
   const hasSecondImage = product.images && product.images.length > 1;
+  // Effet 3D léger au survol (souris uniquement — desktop). Sur mobile/tactile,
+  // enableTouch: false désactive volontairement les handlers tactiles pour ne
+  // jamais interférer avec le défilement de la page (voir consigne "cartes produit").
+  const tilt = useTilt3D({ maxTilt: 7, glareOpacity: 0.12, scaleOnActive: 1, enableTouch: false });
   return (
-    <button
-      onClick={() => onOpen(product.id)}
-      className="hover-card-lift relative text-left group w-full"
-      style={{ "--lift": "3px", "--scale": 1.02 }}
-    >
+    <button onClick={() => onOpen(product.id)} className="relative text-left group w-full">
       <div
+        ref={tilt.ref}
         className="relative overflow-hidden rounded-md transition-shadow duration-300"
         style={{
           background: `radial-gradient(120% 120% at 50% 0%, ${COLORS.surface2} 0%, ${COLORS.surface} 100%)`,
           aspectRatio: "3/4",
           boxShadow: `0 0 0 1px ${COLORS.line}`,
+          ...tilt.style,
         }}
+        {...tilt.handlers}
       >
         <img
           src={product.images[0]}
@@ -2456,6 +2268,14 @@ function ProductCard({ product, brand, onOpen }) {
           className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
           style={{ boxShadow: `inset 0 0 0 1px ${COLORS.magenta}88` }}
         />
+        {!tilt.disabled && (
+          <div
+            ref={tilt.glareRef}
+            aria-hidden
+            className="absolute inset-0 pointer-events-none"
+            style={{ ...tilt.glareStyle, opacity: 0 }}
+          />
+        )}
         <TagCorner />
         <div className="absolute top-3 right-3">
           {(() => {
@@ -2622,7 +2442,7 @@ function Catalog({ products, brands, initialCategory, initialBrand, initialGende
   );
 
   return (
-    <section className="max-w-7xl mx-auto px-4 md:px-8 py-12">
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
       <Eyebrow>Catalogue</Eyebrow>
       <div className="flex items-end justify-between flex-wrap gap-4 mt-3 mb-8">
         <h1 style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>TOUT LE CATALOGUE</h1>
@@ -2663,10 +2483,8 @@ function Catalog({ products, brands, initialCategory, initialBrand, initialGende
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-5 md:gap-6">
-              {filtered.map((p, i) => (
-                <Reveal key={p.id} delay={(i % 9) * 55} y={16} blur={false}>
-                  <ProductCard product={p} brand={brands.find((b) => b.id === p.brandId)} onOpen={onOpen} />
-                </Reveal>
+              {filtered.map((p) => (
+                <ProductCard key={p.id} product={p} brand={brands.find((b) => b.id === p.brandId)} onOpen={onOpen} />
               ))}
             </div>
           )}
@@ -2725,8 +2543,15 @@ function ProductGallery({ product }) {
 
   const goTo = (i) => setActiveImg(((i % product.images.length) + product.images.length) % product.images.length);
 
+  // Effet 3D interactif (inclinaison, reflet, léger zoom) — souris sur desktop,
+  // doigt sur mobile. Le tilt tactile ne fait qu'ajuster la transformation
+  // visuelle (aucun preventDefault) : le swipe horizontal existant (changement
+  // d'image) et le scroll vertical de la page restent intacts.
+  const tilt = useTilt3D({ maxTilt: 9, glareOpacity: 0.18, scaleOnActive: 1.015, enableTouch: true });
+
   const onTouchStart = (e) => { touchStart.current = e.touches[0].clientX; };
   const onTouchEnd = (e) => {
+    tilt.reset();
     if (touchStart.current == null) return;
     const dx = e.changedTouches[0].clientX - touchStart.current;
     if (dx > 50) goTo(activeImg - 1);
@@ -2739,16 +2564,23 @@ function ProductGallery({ product }) {
       {/* Image principale — carrée, cadrage net, produit centré sans vide excessif.
           Cadre 100% de la largeur disponible, jamais plus large que l'écran ; l'image est
           toujours contenue et centrée à l'intérieur (object-contain + flex center), jamais
-          déformée, jamais débordante. */}
+          déformée, jamais débordante.
+          Effet 3D : la boîte elle-même (ref={tilt.ref}) reçoit l'inclinaison/le zoom via
+          useTilt3D ; le contenu (image, coin, badges) suit sans logique séparée. */}
       <div
+        ref={tilt.ref}
         className="relative w-full max-w-full rounded-lg overflow-hidden cursor-zoom-in select-none"
         style={{
           aspectRatio: "1/1",
           background: `radial-gradient(120% 100% at 50% 8%, ${COLORS.surface2} 0%, ${COLORS.surface} 55%, #0C0913 100%)`,
           boxShadow: `0 0 0 1px ${COLORS.line}, 0 30px 60px -30px rgba(0,0,0,0.7)`,
+          ...tilt.style,
         }}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
+        onTouchMove={tilt.handlers.onTouchMove}
+        onMouseMove={tilt.handlers.onMouseMove}
+        onMouseLeave={tilt.handlers.onMouseLeave}
         onClick={() => setZoomOpen(true)}
       >
         <div className="absolute inset-0 flex items-center justify-center p-5 sm:p-7">
@@ -2762,6 +2594,14 @@ function ProductGallery({ product }) {
             decoding="async"
           />
         </div>
+        {!tilt.disabled && (
+          <div
+            ref={tilt.glareRef}
+            aria-hidden
+            className="absolute inset-0 pointer-events-none"
+            style={{ ...tilt.glareStyle, opacity: 0 }}
+          />
+        )}
         <TagCorner />
         {product.images.length > 1 && (
           <div
@@ -2949,7 +2789,7 @@ function ProductPage({ product, brand, products, brands, onOpen, go, onAddToCart
   };
 
   return (
-    <section className="max-w-7xl mx-auto px-4 md:px-8 py-10 overflow-x-hidden">
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-10 overflow-x-hidden">
       <button onClick={() => go("catalog")} className="text-xs uppercase tracking-widest mb-6 inline-flex items-center gap-1.5" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
         ← Retour au catalogue
       </button>
@@ -3197,18 +3037,18 @@ function BrandsPage({ brands, products, onOpenBrand, selectedBrand, onOpen, go }
     const brand = brands.find((b) => b.id === selectedBrand);
     const brandProducts = products.filter((p) => p.brandId === selectedBrand);
     return (
-      <section className="max-w-7xl mx-auto px-4 md:px-8 py-12">
+      <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
         <button onClick={() => onOpenBrand(null)} className="text-xs uppercase tracking-widest mb-6" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
           ← Toutes les marques
         </button>
         <Eyebrow>Marque</Eyebrow>
         <h1 className="mt-3 mb-2" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>{brand.name.toUpperCase()}</h1>
         <p className="max-w-lg text-sm mb-8" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>{brand.description}</p>
-        <RevealGroup className="grid grid-cols-2 md:grid-cols-4 gap-5" step={55} y={16}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
           {brandProducts.map((p) => (
             <ProductCard key={p.id} product={p} brand={brand} onOpen={onOpen} />
           ))}
-        </RevealGroup>
+        </div>
       </section>
     );
   }
@@ -3216,7 +3056,7 @@ function BrandsPage({ brands, products, onOpenBrand, selectedBrand, onOpen, go }
   const filteredBrands = brands.filter((b) => b.name.toLowerCase().includes(brandSearch.trim().toLowerCase()));
 
   return (
-    <section className="max-w-7xl mx-auto px-4 md:px-8 py-12">
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-12">
       <Eyebrow>Univers King Outlet</Eyebrow>
       <h1 className="mt-3 mb-6" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>MARQUES</h1>
       <div className="relative max-w-sm mb-8">
@@ -3587,7 +3427,7 @@ function ReviewsSection({ reviews, videoTestimonials }) {
         }}
       />
 
-      <div className="max-w-7xl mx-auto px-4 md:px-8 relative">
+      <div className="max-w-7xl mx-auto px-5 md:px-8 relative">
         <Reveal>
           <Eyebrow>Preuve sociale</Eyebrow>
         </Reveal>
@@ -3650,7 +3490,7 @@ function ReviewsSection({ reviews, videoTestimonials }) {
 
 function AboutPage({ go }) {
   return (
-    <section className="max-w-4xl mx-auto px-4 md:px-8 py-16">
+    <section className="max-w-4xl mx-auto px-5 md:px-8 py-16">
       <Eyebrow>Maison</Eyebrow>
       <h1 className="mt-3 mb-6" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>À PROPOS</h1>
       <p className="text-sm leading-relaxed mb-4" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>
@@ -3668,7 +3508,7 @@ function AboutPage({ go }) {
 
 function ContactPage() {
   return (
-    <section className="max-w-4xl mx-auto px-4 md:px-8 py-16">
+    <section className="max-w-4xl mx-auto px-5 md:px-8 py-16">
       <Eyebrow>Contact</Eyebrow>
       <h1 className="mt-3 mb-4" style={{ fontFamily: "Anton", fontSize: "clamp(28px,5vw,44px)", color: COLORS.ink }}>
         CONTACTEZ KING OUTLET
@@ -4404,7 +4244,7 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
   };
 
   return (
-    <section className="max-w-7xl mx-auto px-4 md:px-8 py-10">
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-10">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <Eyebrow>Back-office</Eyebrow>
         {onSignOut && (
@@ -5263,7 +5103,7 @@ function AdminDashboard({ products, setProducts, brands, setBrands, categories, 
 function Footer({ go, setCategoryFilter, setGenderFilter, setSubcategoryFilter }) {
   return (
     <footer className="border-t mt-10" style={{ borderColor: COLORS.line, background: COLORS.surface }}>
-      <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 sm:py-10 md:py-12 grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-7 sm:gap-8">
+      <div className="max-w-7xl mx-auto px-5 md:px-8 py-8 sm:py-10 md:py-12 grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-7 sm:gap-8">
         <div className="col-span-2 md:col-span-1">
           <div style={{ fontFamily: "Anton", fontSize: 20, color: COLORS.ink }}>KING <span className="neon-text">OUTLET</span></div>
           <p className="text-xs mt-3 max-w-xs" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>L'outlet premium des plus grandes marques, à prix réduits.</p>
@@ -5559,7 +5399,7 @@ function InfoStrip() {
     { icon: "💬", text: "Commande et service client via WhatsApp" },
   ];
   return (
-    <section className="max-w-7xl mx-auto px-4 md:px-8 pt-4 pb-12 md:pt-8 md:pb-16">
+    <section className="max-w-7xl mx-auto px-5 md:px-8 pt-4 pb-12 md:pt-8 md:pb-16">
       <Reveal>
         <div
           className="rounded-sm border px-5 py-7 sm:px-10 sm:py-8"
@@ -5594,7 +5434,7 @@ function InfoStrip() {
    ouverte — aucune information n'est inventée ni présupposée. */
 function PhotoSearchSection() {
   return (
-    <section id="recherche-photo" className="max-w-7xl mx-auto px-4 md:px-8 pb-16 md:pb-20 scroll-mt-20">
+    <section id="recherche-photo" className="max-w-7xl mx-auto px-5 md:px-8 pb-16 md:pb-20 scroll-mt-20">
       <Reveal>
         <div
           className="rounded-sm border px-5 py-8 sm:px-10 sm:py-10 text-center"
@@ -5643,7 +5483,7 @@ function PhotoSearchSection() {
 /* ---------------- OrderInfo (Comment Passer Commande) ---------------- */
 function OrderInfo() {
   return (
-    <section className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-8">
+    <section className="max-w-7xl mx-auto px-5 md:px-8 py-6 md:py-8">
       <Reveal>
         <div className="flex justify-center">
           <img
@@ -6039,55 +5879,6 @@ function App() {
           background: ${COLORS.surface};
         }
 
-        /* ---- Relief au survol (cartes) — transform uniquement, réutilisable ---- */
-        .hover-card-lift {
-          transition: transform 0.35s cubic-bezier(0.16,1,0.3,1);
-          will-change: transform;
-        }
-        .hover-card-lift:hover {
-          transform: translateY(calc(var(--lift, 6px) * -1)) scale(var(--scale, 1.015));
-        }
-
-        /* ---- Header : transition fluide entre l'état "plein" et l'état "compact" au scroll ---- */
-        .site-header {
-          transition: background-color 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease, transform 0.32s cubic-bezier(0.16,1,0.3,1);
-        }
-        .site-header-inner {
-          transition: height 0.3s cubic-bezier(0.16,1,0.3,1);
-        }
-        .site-header-logo {
-          transition: transform 0.3s cubic-bezier(0.16,1,0.3,1);
-        }
-
-        /* ---- Micro-interactions génériques : liens avec soulignement animé ---- */
-        .link-underline { position: relative; }
-        .link-underline::after {
-          content: "";
-          position: absolute;
-          left: 0; right: 100%;
-          bottom: -2px;
-          height: 1px;
-          background: currentColor;
-          transition: right 0.3s cubic-bezier(0.16,1,0.3,1);
-        }
-        .link-underline:hover::after { right: 0; }
-
-        /* ---- Flottement décoratif très léger (éléments stratégiques uniquement) ---- */
-        @keyframes ambientFloat {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-6px); }
-        }
-        .ambient-float { animation: ambientFloat 6s ease-in-out infinite; }
-
-        @media (max-width: 767px) {
-          .ambient-float { animation: none; }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .hover-card-lift:hover { transform: none; }
-          .ambient-float { animation: none; }
-        }
-
         @media (prefers-reduced-motion: reduce) {
           *, *::before, *::after {
             animation-duration: 0.001ms !important;
@@ -6097,8 +5888,6 @@ function App() {
           }
         }
       `}</style>
-
-      <ScrollProgress />
 
       <Header
         route={route}
@@ -6121,7 +5910,7 @@ function App() {
           <InfoStrip />
           <OrderInfo />
           <CategoryGrid go={go} setCategoryFilter={setCategoryFilter} setGenderFilter={setGenderFilter} setSubcategoryFilter={setSubcategoryFilter} />
-          <section className="max-w-7xl mx-auto px-4 md:px-8 pb-16">
+          <section className="max-w-7xl mx-auto px-5 md:px-8 pb-16">
             <div className="flex items-end justify-between mb-6">
               <Reveal>
                 <div>
@@ -6137,14 +5926,14 @@ function App() {
               ))}
             </RevealGroup>
           </section>
-          <section className="max-w-7xl mx-auto px-4 md:px-8 pb-20">
+          <section className="max-w-7xl mx-auto px-5 md:px-8 pb-20">
             <div className="flex items-end justify-between mb-6">
-              <SlideIn from="left">
+              <Reveal>
                 <div>
                   <Eyebrow>Sélection</Eyebrow>
                   <h2 className="mt-3" style={{ fontFamily: "Anton", fontSize: "clamp(24px,4vw,36px)", color: COLORS.ink }}>NOS MEILLEURES VENTES</h2>
                 </div>
-              </SlideIn>
+              </Reveal>
               <GhostButton onClick={() => go("catalog-featured")}>Voir tout</GhostButton>
             </div>
             <RevealGroup className="grid grid-cols-2 md:grid-cols-4 gap-5" step={70} y={20}>
@@ -6182,7 +5971,7 @@ function App() {
       {route === "contact" && <ContactPage />}
 
       {route === "admin" && !authChecked && (
-        <section className="max-w-7xl mx-auto px-4 md:px-8 py-20 text-center">
+        <section className="max-w-7xl mx-auto px-5 md:px-8 py-20 text-center">
           <p className="text-sm" style={{ color: COLORS.inkDim, fontFamily: "Inter" }}>Vérification de la session…</p>
         </section>
       )}
